@@ -35,13 +35,22 @@ jobs:
           fi
 
           cd dist
+          for required_file in plugin.min.js plugin.json package.json; do
+            if [[ ! -s "$required_file" ]]; then
+              echo "Required publish file is missing or empty: $required_file" >&2
+              exit 1
+            fi
+          done
+
           jq --arg repositoryName "$GITHUB_REPOSITORY" \
              --arg commitSha "$GITHUB_SHA" \
              --arg repositoryOwner "$GITHUB_REPOSITORY_OWNER" \
              '. + {repositoryName: $repositoryName, commitSha: $commitSha, repositoryOwner: $repositoryOwner}' \
              plugin.json > plugin.json.tmp
           mv plugin.json.tmp plugin.json
-          tar -cf ../plugin.tar .
+          # Windy serves the minified bundle; omit the development bundle and source maps.
+          tar -cf ../plugin.tar plugin.min.js plugin.json package.json
+          ls -lh ../plugin.tar
 
           curl --silent --show-error --fail-with-body \
             -X POST 'https://node.windy.com/plugins/v1.0/upload' \
