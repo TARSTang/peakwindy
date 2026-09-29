@@ -42,7 +42,7 @@ jobs:
             fi
           done
 
-          if ! jq -e '.author | type == "string" and length >= 5' plugin.json >/dev/null; then
+          if ! jq -e '(.author | type) == "string" and (.author | length) >= 5' plugin.json >/dev/null; then
             echo "Windy requires plugin author to contain at least 5 characters" >&2
             exit 1
           fi
