@@ -6,7 +6,7 @@ const config: ExternalPluginConfig = {
 	title: '高海拔天气剖面分析',
 	icon: '▲',
 	description: '查看高海拔地点与路线的天气剖面。',
-	author: '私人安装',
+	author: 'TARSang',
 	desktopUI: 'rhpane',
 	desktopWidth: 430,
 	mobileUI: 'fullscreen',

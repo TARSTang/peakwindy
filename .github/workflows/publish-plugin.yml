@@ -42,6 +42,11 @@ jobs:
             fi
           done
 
+          if ! jq -e '.author | type == "string" and length >= 5' plugin.json >/dev/null; then
+            echo "Windy requires plugin author to contain at least 5 characters" >&2
+            exit 1
+          fi
+
           jq --arg repositoryName "$GITHUB_REPOSITORY" \
              --arg commitSha "$GITHUB_SHA" \
              --arg repositoryOwner "$GITHUB_REPOSITORY_OWNER" \
