@@ -2,13 +2,13 @@
 
 这是一个在 Windy 页面内运行的高海拔天气剖面插件，用 Windy 点预报和地形数据查看单点垂直天气与路线天气剖面。天气值始终标明模型与有效时刻；只有 Windy 实际返回的高度层才会参与分析，缺测不外推。
 
-项目源码按 PolyForm Noncommercial License 1.0.0 提供，允许非商业使用，不允许商业使用。该许可是源码可见的非商业许可，不符合 OSI《开源定义》中不得限制商业用途的要求。按用户要求，另拟了[向 Windy 的有限许可](WINDY-LICENSE-EXCEPTION.md)，允许 Windyty, SE 为 Windy.com 私有插件审核、托管、修改和分发所必需的范围内使用本插件，不授权其他商业使用。Windy 总条款仍要求纳入 Windy 服务的插件开源并允许 Windy 修改，因此不能仅凭这份有限许可断定它满足 Windy 的正式发布要求。获得 Windy 对此许可安排的书面确认前，不要通过 Windy 发布工作流分发插件。详见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目原创代码按 [MIT License](LICENSE) 授权。该许可允许任何人使用、修改、再发布和商业使用本项目代码；继续分发时须保留版权与许可声明。第三方依赖仍按各自许可证授权，Windy 服务、商标、天气数据及其他内容不属于本项目许可范围，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 给朋友使用
 
-本地开发地址 `https://127.0.0.1:9999/plugin.js` 只能用于开发者自己的电脑。Windy 的正式发布指南允许将私有插件安装链接分享给朋友，但条款对开源许可有额外要求。由于本项目禁止一般商业使用，目前不能据公开文档确认它可以通过 Windy 托管后分享。Windy 插件配置保持 `private: true`；这只表示不在公开插件库展示，不限制知道安装地址的人加载插件。
+本地开发地址 `https://127.0.0.1:9999/plugin.js` 只能用于开发者自己的电脑。要让朋友安装，需先把插件发布到 Windy 托管，再分享生成的私有插件链接。Windy 发布指南说明私有插件链接可分享给朋友；`private: true` 表示不在公开插件库展示，不限制知道安装地址的人加载插件。发布前需在 GitHub 仓库配置 `WINDY_API_KEY` Actions secret，并手动运行发布工作流。Windy 服务、商标、天气数据及其他内容仍受其各自条款约束。
 
-在许可兼容性得到 Windy 确认前，GitHub Actions 只运行测试、类型检查和构建，不向 Windy 上传插件。密钥不得写入源码、README、提交记录或发给朋友。
+GitHub Actions 的验证工作流不会向 Windy 上传插件；发布工作流需使用仓库的 `WINDY_API_KEY` secret，严禁把密钥写入源码、README 或提交记录，也不要发给朋友。
 
 ## 开发和加载
 

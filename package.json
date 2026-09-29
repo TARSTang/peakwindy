@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Private Windy plugin for high-altitude and route weather profile analysis",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "scripts": {
     "start": "rollup -w -c",
     "build": "node scripts/build.mjs",
