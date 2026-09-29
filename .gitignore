@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+项目进度与下一步.md
+windy_high_altitude_plugin_survey.docx
