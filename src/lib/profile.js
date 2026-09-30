@@ -1463,7 +1463,7 @@ const CROSS_SECTION_FIELDS = {
 	thickness: null,
 };
 
-export function buildCrossSectionGeometry(samples, timestampMs, variable = 'cloud', maxHeightM = 9_000, width = 640, height = 640) {
+export function buildCrossSectionGeometry(samples, timestampMs, variable = 'cloud', maxHeightM = 9_000, width = 640, height = 640, horizontalMode = 'samples') {
 	const field = Object.prototype.hasOwnProperty.call(CROSS_SECTION_FIELDS, variable)
 		? CROSS_SECTION_FIELDS[variable]
 		: CROSS_SECTION_FIELDS.cloud;
@@ -1486,8 +1486,12 @@ export function buildCrossSectionGeometry(samples, timestampMs, variable = 'clou
 		const sample = ordered[sampleIndex];
 		const sampleLeft = sampleIndex === 0 ? plot.left : (centers[sampleIndex - 1] + centers[sampleIndex]) / 2;
 		const sampleRight = sampleIndex === ordered.length - 1 ? plot.right : (centers[sampleIndex] + centers[sampleIndex + 1]) / 2;
-		const columnX = Math.max(plot.left, centers[sampleIndex] - weatherColumnWidth / 2);
-		const columnWidth = Math.max(1, Math.min(plot.right, centers[sampleIndex] + weatherColumnWidth / 2) - columnX);
+		// In estimated coverage mode each point represents its nearest half-interval.
+		// Keep missing points in the planned grid so no neighbour fills their region.
+		const estimatedCoverage = horizontalMode === 'nearest' && ordered.length > 1;
+		const columnX = estimatedCoverage ? sampleLeft : Math.max(plot.left, centers[sampleIndex] - weatherColumnWidth / 2);
+		const columnWidth = estimatedCoverage ? Math.max(0, sampleRight - sampleLeft)
+			: Math.max(1, Math.min(plot.right, centers[sampleIndex] + weatherColumnWidth / 2) - columnX);
 		const frame = frameAtTimestamp(sample.profile?.frames, timestampMs);
 		const terrainSource = Number.isFinite(sample.terrainElevationM) ? 'Windy 地形接口' : Number.isFinite(sample.profile?.modelElevationM) ? '模式地形' : null;
 		const terrain = Number.isFinite(sample.terrainElevationM) ? sample.terrainElevationM : Number.isFinite(sample.profile?.modelElevationM) ? sample.profile.modelElevationM : null;
@@ -1567,6 +1571,7 @@ export function buildCrossSectionGeometry(samples, timestampMs, variable = 'clou
 		sampleMarks.push({
 			sampleIndex,
 			x: centers[sampleIndex],
+			left: sampleLeft,
 			labelX: isFirstSample ? centers[sampleIndex] + 5 : isLastSample ? centers[sampleIndex] - 5 : centers[sampleIndex],
 			labelAnchor: isFirstSample ? 'start' : isLastSample ? 'end' : 'middle',
 			width: Math.max(1, sampleRight - sampleLeft),
@@ -1601,5 +1606,6 @@ export function buildCrossSectionGeometry(samples, timestampMs, variable = 'clou
 		maxHeightM,
 		maxDistanceM,
 		field,
+		horizontalMode,
 	};
 }

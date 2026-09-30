@@ -1,6 +1,6 @@
 {
   "name": "windy-plugin-high-altitude-profile",
-  "version": "0.1.64",
+  "version": "0.1.65",
   "private": true,
   "type": "module",
   "description": "Private Windy plugin for high-altitude and route weather profile analysis",

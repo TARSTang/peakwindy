@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces';
 
 const config: ExternalPluginConfig = {
 	name: 'windy-plugin-high-altitude-profile',
-	version: '0.1.64',
+	version: '0.1.65',
 	title: '高海拔天气剖面\u200B',
 	icon: '▲',
 	description: '查看高海拔地点与路线的天气剖面。',
