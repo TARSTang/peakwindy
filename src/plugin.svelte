@@ -11,16 +11,20 @@
 			<span class="plugin-version" aria-label={`插件版本 ${config.version}`}>版本 {config.version}</span>
 		</div>
 
-		<div class="model-row" aria-label="预报模式">
-			<span class="control-label">模式</span>
-			<div class="segmented">
-				<button class:active={selectedModel === 'ecmwf'} aria-pressed={selectedModel === 'ecmwf'} on:click={() => selectModel('ecmwf')}>ECMWF</button>
-				<button class:active={selectedModel === 'icon'} aria-pressed={selectedModel === 'icon'} on:click={() => selectModel('icon')}>ICON</button>
+		<div class="model-row" aria-label="预报模式和单位">
+			<div class="control-group model-control-group" role="group" aria-label="预报模式">
+				<span class="control-label">模式</span>
+				<div class="segmented">
+					<button class:active={selectedModel === 'ecmwf'} aria-pressed={selectedModel === 'ecmwf'} on:click={() => selectModel('ecmwf')}>ECMWF</button>
+					<button class:active={selectedModel === 'icon'} aria-pressed={selectedModel === 'icon'} on:click={() => selectModel('icon')}>ICON</button>
+				</div>
 			</div>
-			<span class="control-label unit-control-label">单位</span>
-			<div class="segmented compact" aria-label="单位制">
-				<button class:active={unitSystem === 'metric'} aria-pressed={unitSystem === 'metric'} on:click={() => changeUnitSystem('metric')}>公制</button>
-				<button class:active={unitSystem === 'imperial'} aria-pressed={unitSystem === 'imperial'} on:click={() => changeUnitSystem('imperial')}>英制</button>
+			<div class="control-group unit-control-group" role="group" aria-label="单位制">
+				<span class="control-label">单位</span>
+				<div class="segmented compact">
+					<button class:active={unitSystem === 'metric'} aria-pressed={unitSystem === 'metric'} on:click={() => changeUnitSystem('metric')}>公制</button>
+					<button class:active={unitSystem === 'imperial'} aria-pressed={unitSystem === 'imperial'} on:click={() => changeUnitSystem('imperial')}>英制</button>
+				</div>
 			</div>
 		</div>
 
@@ -36,11 +40,11 @@
 				<button class:active={selectionMode === 'route'} aria-pressed={selectionMode === 'route'} on:click={() => setSelectionMode('route')}>路线</button>
 			</div>
 		</div>
-		<p class="section-copy">{selectionMode === 'point' ? '在地图上点选位置；也可从 Windy 地点菜单打开时传入坐标。' : '按顺序点击路线起点、转折点和终点；列表中的点名称可以修改。折线按实地距离计算。'}</p>
+		<p class="section-copy">{selectionMode === 'point' ? '可在地图点选位置，也可从 Windy 地点菜单直接打开。' : '按顺序点击起点、转折点和终点；点名称可修改，路线按实地距离计算。'}</p>
 
 		{#if selectionMode === 'point'}
 			<div class="coordinate-import">
-				<p class="coordinate-format-note">奥维大陆坐标带 g 并自动转换；境外坐标不带 g，按原值传给 Windy。</p>
+				<p class="coordinate-format-note">大陆奥维坐标：带 g，自动转换。境外坐标：不带 g，按原值查询。</p>
 				<form class="coordinate-entry ovi-coordinate-entry" on:submit|preventDefault={useOviCoordinate}>
 					<label>粘贴奥维坐标（经度,纬度）<input type="text" inputmode="text" autocomplete="off" bind:value={manualCoordinateText} placeholder="g102.07896,29.72998" aria-label="奥维坐标，国内带 g，境外不带 g，顺序为经度、纬度" /></label>
 					<button type="submit" class="small-button locate-button">解析定位</button>
@@ -1638,15 +1642,19 @@
 	.eyebrow { margin: 0; color: var(--profile-water); font-size: 11px; font-weight: 800; letter-spacing: .1em; line-height: 1.35; }
 	.intro-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 19px 0 16px; }
 	.plugin-version { flex: 0 0 auto; border: 1px solid var(--profile-line); border-radius: 999px; padding: 3px 9px; color: var(--profile-muted); font-size: 14px; line-height: 1.4; }
-	.model-row { display: flex; align-items: center; gap: 11px; padding: 11px 0 16px; border-top: 1px solid var(--profile-line); border-bottom: 1px solid var(--profile-line); }
-	.control-label { color: var(--profile-muted); font-size: 13px; }
-	.unit-control-label { margin-left: auto; }
-	.segmented { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--profile-line); border-radius: 9px; padding: 3px; background: #edf3f0; }
-	.segmented button { min-height: 34px; border: 0; border-radius: 6px; padding: 0 12px; background: transparent; color: #536466; cursor: pointer; font-size: 12px; font-weight: 700; }
+	.model-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: end; gap: 12px; padding: 11px 0 16px; border-top: 1px solid var(--profile-line); border-bottom: 1px solid var(--profile-line); }
+	.control-group { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; }
+	.model-control-group { width: 100%; }
+	.unit-control-group { justify-self: end; align-items: flex-end; }
+	.control-label { color: var(--profile-muted); font-size: 14px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
+	.segmented { display: inline-flex; min-width: 0; align-items: center; gap: 3px; border: 1px solid var(--profile-line); border-radius: 9px; padding: 3px; background: #edf3f0; }
+	.segmented button { flex: 0 0 auto; min-height: 34px; border: 0; border-radius: 6px; padding: 0 12px; background: transparent; color: #536466; cursor: pointer; font-size: 12px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+	.model-control-group .segmented { display: flex; width: 100%; }
+	.model-control-group .segmented button { flex: 1 1 0; min-width: 0; }
 	.segmented button.active { background: #fff; color: var(--profile-water); box-shadow: 0 1px 3px #192e3219; }
 	.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 20px 0 7px; }
 	.section-heading h2 { margin: 3px 0 0; color: var(--profile-ink); font-size: 18px; font-weight: 750; letter-spacing: -.025em; }
-	.section-copy { margin: 0 0 13px; color: var(--profile-muted); font-size: 13px; line-height: 1.55; }
+	.section-copy { margin: 0 0 13px; color: var(--profile-muted); font-size: 15px; line-height: 1.55; text-wrap: pretty; }
 	.primary-button, .secondary-button, .small-button { min-height: 42px; border: 0; border-radius: 8px; padding: 0 14px; cursor: pointer; font-size: 13px; font-weight: 750; transition: background-color .18s ease, transform .18s ease; }
 	.primary-button { display: inline-flex; align-items: center; gap: 8px; background: var(--profile-water); color: white; }
 	.primary-button:hover:not(:disabled) { background: #105861; transform: translateY(-1px); }
@@ -1667,7 +1675,7 @@
 	.point-empty-state strong { font-size: 17px; }
 	.point-empty-state p { margin: 5px 0 0; color: var(--profile-muted); font-size: 15px; line-height: 1.55; }
 	.coordinate-import { margin-bottom: 9px; }
-	.coordinate-format-note { margin: 0 0 6px; color: var(--profile-muted); font-size: 14px; line-height: 1.5; }
+	.coordinate-format-note { margin: 0 0 6px; color: var(--profile-muted); font-size: 15px; line-height: 1.55; text-wrap: pretty; }
 	.coordinate-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-bottom: 9px; }
 	.ovi-coordinate-entry { grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; }
 	.coordinate-entry label { display: flex; min-width: 0; flex-direction: column; gap: 5px; color: var(--profile-muted); font-size: 14px; }
@@ -2171,10 +2179,16 @@
 	@media (max-width: 480px) {
 		.plugin-shell { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 		.intro-row { margin-top: 13px; }
-		.section-heading h2 { font-size: 17px; }
-		.model-row { gap: 8px; }
+		.plugin-shell .eyebrow { font-size: 12px; letter-spacing: .06em; }
+		.plugin-shell .plugin-version { font-size: 13px; }
+		.plugin-shell .section-heading h2 { font-size: 20px; }
+		.model-row { column-gap: 10px; }
+		.control-group { gap: 5px; }
+		.control-label { font-size: 13px; }
 		.segmented button { min-height: 44px; }
 		.segmented.compact button { min-height: 44px; padding: 0 8px; }
+		.plugin-shell .section-copy,
+		.plugin-shell .coordinate-format-note { font-size: 15px; line-height: 1.55; }
 		.time-stepper button { min-height: 44px; }
 		.text-button { min-height: 44px; }
 		.primary-button, .secondary-button, .small-button { min-height: 44px; }
@@ -2197,6 +2211,13 @@
 		.viewer-target-control input { width: 94px; }
 		.cloud-level-list > div { grid-template-columns: minmax(88px, .8fr) minmax(40px, 1fr) 44px; gap: 8px; padding: 7px; }
 		.viewer-table { min-width: 570px; font-size: 14px; }
+	}
+	@media (max-width: 360px) {
+		.model-row { grid-template-columns: minmax(0, 1fr); row-gap: 10px; }
+		.model-control-group .segmented,
+		.unit-control-group .segmented { width: 100%; }
+		.unit-control-group { justify-self: stretch; align-items: flex-start; }
+		.unit-control-group .segmented button { flex: 1 1 0; }
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.plugin-shell :global(*) { scroll-behavior: auto !important; transition-duration: .01ms !important; }
