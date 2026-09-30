@@ -5,16 +5,19 @@ import serve from 'rollup-plugin-serve';
 import rollupSvelte from 'rollup-plugin-svelte';
 import rollupSwc from 'rollup-plugin-swc3';
 import sveltePreprocess from 'svelte-preprocess';
+import { readFileSync } from 'node:fs';
 import { transformCodeToESMPlugin, keyPEM, certificatePEM } from '@windycom/plugin-devtools';
 
 const useSourceMaps = true;
+const solarLicenseBanner = '/*! SunCalc 2.0.2 — BSD-2-Clause\n' + readFileSync(new URL('./node_modules/suncalc/LICENSE', import.meta.url), 'utf8') + '\n*/';
 const config = {
 	input: 'src/plugin.svelte',
 	output: [
-		{ file: 'dist/plugin.js', format: 'module', sourcemap: true },
+		{ file: 'dist/plugin.js', format: 'module', sourcemap: true, banner: solarLicenseBanner },
 		{
 			file: 'dist/plugin.min.js',
 			format: 'module',
+			banner: solarLicenseBanner,
 			sourcemap: true,
 			plugins: [terser()],
 		},

@@ -19,6 +19,7 @@
 					<button class:active={selectedModel === 'icon'} aria-pressed={selectedModel === 'icon'} on:click={() => selectModel('icon')}>ICON</button>
 				</div>
 			</div>
+			{#if selectionMode !== 'observation'}
 			<div class="control-group unit-control-group" role="group" aria-label="单位制">
 				<span class="control-label">单位</span>
 				<div class="segmented compact">
@@ -26,9 +27,17 @@
 					<button class:active={unitSystem === 'imperial'} aria-pressed={unitSystem === 'imperial'} on:click={() => changeUnitSystem('imperial')}>英制</button>
 				</div>
 			</div>
+			{/if}
 		</div>
 
 		<div class="divider"></div>
+		<div class="segmented" aria-label="分析方式">
+			<button class:active={selectionMode === 'observation'} on:click={() => setSelectionMode('observation')}>观山</button>
+			<button class:active={selectionMode === 'point'} on:click={() => setSelectionMode('point')}>单点</button>
+			<button class:active={selectionMode === 'route'} on:click={() => setSelectionMode('route')}>路线</button>
+		</div>
+		<ObservationPanel bind:this={observationPanel} active={selectionMode === 'observation'} model={selectedModel} elevation={observationElevation} weather={observationWeather} on:map={drawObservationMap} on:model={event => selectModel(event.detail)}/>
+		{#if selectionMode !== 'observation'}
 
 		<div class="section-heading route-heading">
 			<div>
@@ -142,6 +151,7 @@
 			{/if}
 		{/if}
 
+		{/if}
 		<p class="footer-note">剖面按 Windy 实际返回的高度层绘制；缺测不外推。</p>
 	</section>
 	{#if profileViewer}
@@ -160,6 +170,7 @@
 					</div>
 				</div>
 				<div class="viewer-provenance"><span>数据接口：{viewerProvenance.source}</span><span>模式：{viewerProvenance.model}</span><span>有效时间间隔：{precipitationIntervalLabel}</span><span>起报：{formatSourceTime(viewerSourceProfile?.referenceTime)}</span><span>更新：{formatSourceTime(viewerSourceProfile?.updateTime)}</span>{#if profileViewer === 'point' && activePointFrame?.timeAlignmentNotice}<span>时间轴说明：{activePointFrame.timeAlignmentNotice}</span>{/if}{#if profileViewer === 'point' && activePointFrame?.surfaceVisibilityM !== null && activePointFrame?.surfaceVisibilityM !== undefined}<span>地面能见度：{formatVisibility(activePointFrame.surfaceVisibilityM)}（不代表高空）</span>{/if}{#if profileViewer === 'point' && activePointFrame}<span>地面阵风：{activePointFrame.surfaceWindGustMs === null ? 'Windy 未返回' : formatWind(activePointFrame.surfaceWindGustMs, 1, unitSystem)}（不代表高空）</span>{/if}</div>
+				<p class="viewer-empty-note">新版接口请求范围：{requestedForecastDays} 天；{profileTimeOptions.length ? `${profileViewer === 'route' ? '路线共同' : '当前点'}返回时次：${formatForecastTime(profileTimeOptions[0])} 至 ${formatForecastTime(profileTimeOptions[profileTimeOptions.length - 1])}（北京时间），共 ${profileTimeOptions.length} 个时次。` : '尚无可用时次。'} 实际范围受模型与账号权限限制，各高度的有效层仍可能缺测。</p>
 				{#if profileViewer === 'point' && activePointFrame}
 					<div class="viewer-stat-grid">
 						<div><span>模式</span><strong>{selectedModel.toUpperCase()}</strong></div><div><span>当前模式层</span><strong>{pointGroundLevels.length}</strong></div><div><span>高度范围</span><strong>{pointGroundLevels.length ? `${formatHeight(pointCoverageMinM, 0, unitSystem)}–${formatHeight(pointCoverageMaxM, 0, unitSystem)}` : '无有效层'}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div>
@@ -239,9 +250,7 @@
 				{#if profileViewer === 'route'}
 					<div class="viewer-stat-grid"><div><span>模式</span><strong>{selectedModel.toUpperCase()}</strong></div><div><span>有垂直数据</span><strong>{routeWeatherSamples.filter(sample => sample.profile?.hasVerticalLayers).length}/{routeWeatherSamples.length} 点</strong></div><div><span>路线距离</span><strong>{formatDistance(routeDistanceM, 1, unitSystem)}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div></div>
 					<div class="viewer-target-control"><label>查询高度<input type="number" min={displayHeightNumber(0, 0, unitSystem)} max={displayHeightNumber(20_000, 0, unitSystem)} step={unitSystem === 'metric' ? 50 : 100} value={displayHeightNumber(Number(targetAltitudeM), 1, unitSystem)} on:change={handleTargetAltitudeChange} aria-label={`查询高度，${'海拔'}，${heightUnit(unitSystem)}`} />{heightUnit(unitSystem)}</label><span>横轴：路线累计距离 · 纵轴：海拔</span></div>
-					{#if focusedRouteNearestUsableLevel && (!focusedRouteTargetResult?.ok || focusedRouteTargetResult?.reason === 'below-terrain')}
-						<button type="button" class="secondary-button" on:click={queryAtNearestRouteProfileLevel}>查看最近有效层 {formatHeight(focusedRouteNearestUsableLevel.heightM, 0, unitSystem)}</button>
-					{/if}
+					<div class="route-nearest-level-slot"><button type="button" class="secondary-button" disabled={!focusedRouteNearestUsableLevel} on:click={queryAtNearestRouteProfileLevel}>{focusedRouteNearestUsableLevel ? `查看最近有效层 ${formatHeight(focusedRouteNearestUsableLevel.heightM, 0, unitSystem)}` : '该点暂无有效高度层'}</button></div>
 					<div class="altitude-presets route-altitude-presets" aria-label="常用查询高度">{#each ([3000, 4000, 5000, 6000, 7000, 8000, 9000]) as preset (preset)}<button class:active={Number(targetAltitudeM) === preset} aria-pressed={Number(targetAltitudeM) === preset} on:click={() => targetAltitudeM = preset}>{displayHeightNumber(preset, 0, unitSystem)} {heightUnit(unitSystem)}</button>{/each}</div>
 					<div class="route-viewer-controls">
 						<div class="metric-tabs" aria-label="剖面显示变量"><button class:active={routeDisplayVariable === 'cloud'} on:click={() => routeDisplayVariable = 'cloud'}>模式云量</button><button class:active={routeDisplayVariable === 'thickness'} on:click={() => routeDisplayVariable = 'thickness'}>云层厚度估算</button><button class:active={routeDisplayVariable === 'humidity'} on:click={() => routeDisplayVariable = 'humidity'}>湿度</button><button class:active={routeDisplayVariable === 'temperature'} on:click={() => routeDisplayVariable = 'temperature'}>温度</button><button class:active={routeDisplayVariable === 'wind'} on:click={() => routeDisplayVariable = 'wind'}>风速</button></div>
@@ -254,7 +263,19 @@
 					{:else if routeDisplayVariable === 'thickness'}
 						<div class="viewer-chart-legend" aria-label="云层厚度估算图例"><strong>厚度颜色</strong><span><i style="background:#67a981"></i>不足 {displayHeightNumber(500, 0, unitSystem)} {heightUnit(unitSystem)}</span><span><i style="background:#d7b84f"></i>{displayHeightNumber(500, 0, unitSystem)}–不足 {displayHeightNumber(1500, 0, unitSystem)} {heightUnit(unitSystem)}</span><span><i style="background:#df8a4f"></i>{displayHeightNumber(1500, 0, unitSystem)}–不足 {displayHeightNumber(3000, 0, unitSystem)} {heightUnit(unitSystem)}</span><span><i style="background:#c85d58"></i>{displayHeightNumber(3000, 0, unitSystem)} {heightUnit(unitSystem)} 及以上</span><span><i class="legend-hatch"></i>蓝斜纹：相对湿度≥90%的可能云区</span><span><i class="legend-missing"></i>灰斜纹：模式云带边界不完整</span><span>云带边界按相邻模式层中点估算</span></div>
 					{:else}<div class="viewer-chart-legend" aria-label="当前变量色阶说明"><strong>{routeMetricLabel}</strong>{#each routeLegendSteps as step (step.label)}<span><i style={`background:${step.color}`}></i>{step.label}</span>{/each}<span><i class="legend-missing"></i>灰色：缺测</span><span><i class="legend-hatch"></i>斜纹：相对湿度≥90%的可能云区</span></div>{/if}
-					<div class="route-viewer-chart" use:observeRouteChartWidth><svg viewBox={`0 0 ${crossSectionGeometry.width} ${crossSectionGeometry.height}`} preserveAspectRatio="none" role="group" aria-label="路线距离与海拔天气剖面；可选择各天气采样点"><defs><pattern id="viewer-route-rh-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#6fb9d2" fill-opacity=".12"/><line x1="0" y1="0" x2="0" y2="7" stroke="#6fb9d2" stroke-width="2" stroke-opacity=".6"/></pattern><pattern id="viewer-route-incomplete-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#737b8b" fill-opacity=".22"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aab1bd" stroke-width="2" stroke-opacity=".75"/></pattern><marker id="viewer-wind-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#f5d16a"/></marker></defs><text x={crossSectionGeometry.plot.left} y={crossSectionGeometry.plot.top - 14} class="viewer-axis-title">海拔（{heightUnit(unitSystem)}）</text>{#each profileAltitudeTicks as tick (tick)}<line x1={crossSectionGeometry.plot.left} x2={crossSectionGeometry.plot.right} y1={crossSectionGeometry.y(tick)} y2={crossSectionGeometry.y(tick)} class="viewer-grid-line"/><text x={crossSectionGeometry.plot.left - 10} y={crossSectionGeometry.y(tick) + 5} text-anchor="end" class="viewer-axis-label">{displayHeightNumber(tick, 0, unitSystem)}</text>{/each}{#each crossSectionGeometry.cells as cell (`viewer-${cell.sampleIndex}-${cell.pressureHPa ?? 'missing'}-${cell.y}`)}<rect x={cell.x} y={cell.y} width={cell.width} height={cell.height} fill={cell.missing ? '#5a647b' : crossSectionColor(cell.value, routeDisplayVariable)} opacity={cell.missing ? .55 : .74} stroke={cell.missing ? '#b5c0d0' : '#0b1122'} stroke-width="1" stroke-dasharray={cell.missing ? '3 3' : undefined}><title>{routeCellTitle(cell, unitSystem)}</title></rect>{/each}{#each crossSectionGeometry.directCloudBands as band (`viewer-model-cloud-${band.sampleIndex}-${band.band.lowHeightM}`)}{#if routeDisplayVariable === 'thickness'}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM)} opacity=".92" stroke={band.band.thicknessM === null ? '#c1c9d4' : '#f2f5fb'} stroke-dasharray={band.band.thicknessM === null ? '2 3' : undefined}><title>{directCloudBandTitle(band.band, unitSystem)}</title></rect>{/if}{#if routeDisplayVariable === 'thickness' && band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.possibleCloudBands as band (`viewer-rh-${band.sampleIndex}-${band.y}`)}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={routeDisplayVariable === 'thickness' ? band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM) : 'url(#viewer-route-rh-hatch)'} opacity={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? 0.86 : 1} stroke={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '#d7e4ea' : 'none'} stroke-dasharray={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '4 3' : undefined}><title>{routeCloudBandTitle(band.band, unitSystem)}</title></rect>{#if band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.levelMarks as mark (`route-level-${mark.sampleIndex}-${mark.pressureHPa ?? '未知'}-${mark.heightM}`)}{#if routeDisplayVariable !== 'thickness'}<circle cx={mark.x} cy={mark.y} r="3.5" class={`viewer-level-mark ${mark.missing ? 'viewer-level-mark--missing' : ''}`}><title>{formatHeight(mark.heightM, 0, unitSystem)} · {mark.pressureHPa ?? '气压未知'} 百帕 · {mark.missing ? '缺测' : routeMetricValue(mark.value, unitSystem)}</title></circle>{/if}{/each}{#if routeDisplayVariable === 'temperature'}{#each routeFreezingMarks as mark, index (index)}<circle cx={mark.x} cy={mark.y} r="5" class="viewer-freezing-mark"><title>{mark.name} · 0°C 温度层估算 {formatHeight(mark.heightM, 0, unitSystem)} · 路线距离 {formatDistance(mark.distanceM, 1, unitSystem)}</title></circle>{/each}{/if}{#if routeTargetLine.line}<path d={routeTargetLine.line} class="viewer-target-line viewer-route-target-path"/>{/if}{#each routeTargetLine.points as targetPoint (`target-${targetPoint.sampleIndex}`)}<circle cx={targetPoint.x} cy={targetPoint.y} r={targetPoint.sampleIndex === routeFocusedIndex ? 6 : 3.5} class="viewer-route-target-point"/>{/each}{#if routeTerrainOverlay.area}<path d={routeTerrainOverlay.area} class="viewer-terrain-area"/>{/if}{#if routeTerrainOverlay.line}<path d={routeTerrainOverlay.line} class="viewer-terrain-line"/>{:else if crossSectionGeometry.terrainPath}<path d={crossSectionGeometry.terrainPath} class="viewer-terrain-line"/>{/if}{#if routeTerrainOverlay.highest && routeTerrainOverlay.highest.elevationM <= 9_000}<circle cx={routeTerrainOverlay.highest.x} cy={routeTerrainOverlay.highest.y} r="5" class="viewer-highest-dot"><title>路线最高地形采样点：{formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}</title></circle>{/if}{#each routeWindMarks as wind (wind.sampleIndex)}<g transform={`translate(${wind.x},${wind.y}) rotate(${windFlowRotationDeg(wind.directionDeg)})`}><line x1="-11" y1="0" x2="9" y2="0" class="viewer-wind-arrow" marker-end="url(#viewer-wind-arrow)"><title>{wind.name}：风速 {formatWind(wind.speedMs, 1, unitSystem)}；风来自 {formatWindDirection(wind.directionDeg)}</title></line></g>{/each}{#each crossSectionGeometry.sampleMarks as mark (mark.sampleIndex)}<line x1={mark.x} x2={mark.x} y1={crossSectionGeometry.plot.bottom} y2={crossSectionGeometry.plot.top} class={mark.sampleIndex === routeFocusedIndex ? 'viewer-sample-line viewer-sample-line--active' : 'viewer-sample-line'}/>{#if mark.sampleIndex === 0 || mark.sampleIndex === crossSectionGeometry.sampleMarks.length - 1 || crossSectionGeometry.sampleMarks.length <= 10}<text x={mark.labelX} y={crossSectionGeometry.plot.bottom + 28} text-anchor={mark.labelAnchor} class="viewer-axis-label">{formatDistance(mark.distanceM, 1, unitSystem)}</text>{/if}<rect x={mark.left} y={crossSectionGeometry.plot.top} width={mark.width} height={crossSectionGeometry.plot.bottom - crossSectionGeometry.plot.top} class="route-sample-hit" role="button" tabindex="0" aria-label={`查看${mark.name}，路线距离 ${formatDistance(mark.distanceM, 1, unitSystem)}`} on:click={() => routeFocusedIndex = mark.sampleIndex} on:keydown={(event) => handleRouteSampleKeydown(event, mark.sampleIndex)}><title>选择{mark.name}查看逐层天气</title></rect>{/each}
+					<section class="route-point-readout" aria-label="路线点具体天气数值">
+	<div class="route-readout-heading"><strong>{routePointerReadout ? '指向位置 · 最近采样点' : '查询线 · 已选采样点'}：{routeReadoutSample?.name ?? '尚未选点'}</strong><span>沿线 {formatDistance(routeReadoutSample?.distanceM, 1, unitSystem)} · {selectedModel.toUpperCase()} · {effectiveForecastTimestampMs ? formatForecastTime(effectiveForecastTimestampMs) : '暂无时次'}</span></div>
+	<div class="route-readout-values">
+		<div><span>查看海拔</span><strong>{formatHeight(routeReadoutAltitudeM, 0, unitSystem)}</strong><small>{routePointerReadout && activeRouteAltitudePointerId === null ? '悬停高度；绿线未改变' : '绿色查询线高度'}</small></div>
+		<div><span>该点地形</span><strong>{formatHeight(routeReadoutTerrainM, 0, unitSystem)}</strong><small>{Number.isFinite(routeReadoutSample?.terrainElevationM) ? 'Windy 地形' : '模式地形或缺测'}</small></div>
+		<div><span>温度</span><strong>{formatTemperature(routeReadoutWeather?.temperatureC, 1, unitSystem)}</strong><small>{methodLabel(routeReadoutWeather?.methods?.temperature)}</small></div>
+		<div><span>相对湿度</span><strong>{formatValue(routeReadoutWeather?.humidityPct, 0, '%')}</strong><small>{methodLabel(routeReadoutWeather?.methods?.humidity)}</small></div>
+		<div><span>风速</span><strong>{formatWind(routeReadoutWeather?.windSpeedMs, 1, unitSystem)}</strong><small>{formatWindDirection(routeReadoutWeather?.windDirectionDeg)} · {methodLabel(routeReadoutWeather?.methods?.wind)}</small></div>
+		<div><span>模式云量</span><strong>{formatValue(routeReadoutWeather?.cloudPct, 0, '%')}</strong><small>{methodLabel(routeReadoutWeather?.methods?.cloud)}</small></div>
+	</div>
+	<p title={routeReadoutNotice}>{routeReadoutNotice}</p>
+</section>
+<div class="route-viewer-chart" use:observeRouteChartWidth><svg viewBox={`0 0 ${crossSectionGeometry.width} ${crossSectionGeometry.height}`} preserveAspectRatio="none" role="group" aria-label="路线距离与海拔天气剖面；可选择各天气采样点" on:pointermove={hoverRouteChart} on:pointerleave={clearRoutePointerReadout}><defs><pattern id="viewer-route-rh-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#6fb9d2" fill-opacity=".12"/><line x1="0" y1="0" x2="0" y2="7" stroke="#6fb9d2" stroke-width="2" stroke-opacity=".6"/></pattern><pattern id="viewer-route-incomplete-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#737b8b" fill-opacity=".22"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aab1bd" stroke-width="2" stroke-opacity=".75"/></pattern><marker id="viewer-wind-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#f5d16a"/></marker></defs><text x={crossSectionGeometry.plot.left} y={crossSectionGeometry.plot.top - 14} class="viewer-axis-title">海拔（{heightUnit(unitSystem)}）</text>{#each profileAltitudeTicks as tick (tick)}<line x1={crossSectionGeometry.plot.left} x2={crossSectionGeometry.plot.right} y1={crossSectionGeometry.y(tick)} y2={crossSectionGeometry.y(tick)} class="viewer-grid-line"/><text x={crossSectionGeometry.plot.left - 10} y={crossSectionGeometry.y(tick) + 5} text-anchor="end" class="viewer-axis-label">{displayHeightNumber(tick, 0, unitSystem)}</text>{/each}{#each crossSectionGeometry.cells as cell (`viewer-${cell.sampleIndex}-${cell.pressureHPa ?? 'missing'}-${cell.y}`)}<rect x={cell.x} y={cell.y} width={cell.width} height={cell.height} fill={cell.missing ? '#5a647b' : crossSectionColor(cell.value, routeDisplayVariable)} opacity={cell.missing ? .55 : .74} stroke={cell.missing ? '#b5c0d0' : '#0b1122'} stroke-width="1" stroke-dasharray={cell.missing ? '3 3' : undefined}><title>{routeCellTitle(cell, unitSystem)}</title></rect>{/each}{#each crossSectionGeometry.directCloudBands as band (`viewer-model-cloud-${band.sampleIndex}-${band.band.lowHeightM}`)}{#if routeDisplayVariable === 'thickness'}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM)} opacity=".92" stroke={band.band.thicknessM === null ? '#c1c9d4' : '#f2f5fb'} stroke-dasharray={band.band.thicknessM === null ? '2 3' : undefined}><title>{directCloudBandTitle(band.band, unitSystem)}</title></rect>{/if}{#if routeDisplayVariable === 'thickness' && band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.possibleCloudBands as band (`viewer-rh-${band.sampleIndex}-${band.y}`)}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={routeDisplayVariable === 'thickness' ? band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM) : 'url(#viewer-route-rh-hatch)'} opacity={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? 0.86 : 1} stroke={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '#d7e4ea' : 'none'} stroke-dasharray={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '4 3' : undefined}><title>{routeCloudBandTitle(band.band, unitSystem)}</title></rect>{#if band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.levelMarks as mark (`route-level-${mark.sampleIndex}-${mark.pressureHPa ?? '未知'}-${mark.heightM}`)}{#if routeDisplayVariable !== 'thickness'}<circle cx={mark.x} cy={mark.y} r="3.5" class={`viewer-level-mark ${mark.missing ? 'viewer-level-mark--missing' : ''}`}><title>{formatHeight(mark.heightM, 0, unitSystem)} · {mark.pressureHPa ?? '气压未知'} 百帕 · {mark.missing ? '缺测' : routeMetricValue(mark.value, unitSystem)}</title></circle>{/if}{/each}{#if routeDisplayVariable === 'temperature'}{#each routeFreezingMarks as mark, index (index)}<circle cx={mark.x} cy={mark.y} r="5" class="viewer-freezing-mark"><title>{mark.name} · 0°C 温度层估算 {formatHeight(mark.heightM, 0, unitSystem)} · 路线距离 {formatDistance(mark.distanceM, 1, unitSystem)}</title></circle>{/each}{/if}{#if routeTargetLine.line}<path d={routeTargetLine.line} class="viewer-target-line viewer-route-target-path"/>{/if}{#each routeTargetLine.points as targetPoint (`target-${targetPoint.sampleIndex}`)}<circle cx={targetPoint.x} cy={targetPoint.y} r={targetPoint.sampleIndex === routeFocusedIndex ? 6 : 3.5} class="viewer-route-target-point"/>{/each}{#if routeTerrainOverlay.area}<path d={routeTerrainOverlay.area} class="viewer-terrain-area"/>{/if}{#if routeTerrainOverlay.line}<path d={routeTerrainOverlay.line} class="viewer-terrain-line"/>{:else if crossSectionGeometry.terrainPath}<path d={crossSectionGeometry.terrainPath} class="viewer-terrain-line"/>{/if}{#if routeTerrainOverlay.highest && routeTerrainOverlay.highest.elevationM <= 9_000}<circle cx={routeTerrainOverlay.highest.x} cy={routeTerrainOverlay.highest.y} r="5" class="viewer-highest-dot"><title>路线最高地形采样点：{formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}</title></circle>{/if}{#each routeWindMarks as wind (wind.sampleIndex)}<g transform={`translate(${wind.x},${wind.y}) rotate(${windFlowRotationDeg(wind.directionDeg)})`}><line x1="-11" y1="0" x2="9" y2="0" class="viewer-wind-arrow" marker-end="url(#viewer-wind-arrow)"><title>{wind.name}：风速 {formatWind(wind.speedMs, 1, unitSystem)}；风来自 {formatWindDirection(wind.directionDeg)}</title></line></g>{/each}{#each crossSectionGeometry.sampleMarks as mark (mark.sampleIndex)}<line x1={mark.x} x2={mark.x} y1={crossSectionGeometry.plot.bottom} y2={crossSectionGeometry.plot.top} class={mark.sampleIndex === routeFocusedIndex ? 'viewer-sample-line viewer-sample-line--active' : 'viewer-sample-line'}/>{#if mark.sampleIndex === 0 || mark.sampleIndex === crossSectionGeometry.sampleMarks.length - 1 || crossSectionGeometry.sampleMarks.length <= 10}<text x={mark.labelX} y={crossSectionGeometry.plot.bottom + 28} text-anchor={mark.labelAnchor} class="viewer-axis-label">{formatDistance(mark.distanceM, 1, unitSystem)}</text>{/if}<rect x={mark.left} y={crossSectionGeometry.plot.top} width={mark.width} height={crossSectionGeometry.plot.bottom - crossSectionGeometry.plot.top} class="route-sample-hit" role="button" tabindex="0" aria-label={`查看${mark.name}，路线距离 ${formatDistance(mark.distanceM, 1, unitSystem)}`} on:click={() => selectRouteSample(mark.sampleIndex)} on:keydown={(event) => handleRouteSampleKeydown(event, mark.sampleIndex)}><title>选择{mark.name}查看逐层天气</title></rect>{/each}
 {#if Number.isFinite(Number(targetAltitudeM)) && Number(targetAltitudeM) >= 0 && Number(targetAltitudeM) <= crossSectionGeometry.maxHeightM}
 	{@const lineY = crossSectionGeometry.y(Number(targetAltitudeM))}
 	{@const labelY = lineY < crossSectionGeometry.plot.top + 36 ? lineY + 8 : lineY - 32}
@@ -270,7 +291,7 @@
 					<div class="route-chart-note">{#if routeDisplayVariable === 'temperature'}<span><i class="freezing-level-key"></i>圆点为各分析点的 0°C 温度层估算高度</span>{/if}<span><i class="wind-arrow-key"></i>黄色箭头指向风的去向，位于查询高度</span><span>没有箭头表示该高度的风向未返回</span><span>点击图中采样列可查看该点完整逐层数值</span></div>
 					<div class="route-terrain-note">{routeTerrainOverlay.highest ? `路线最高地形采样点：${formatDistance(routeTerrainOverlay.highest.distanceM, 1, unitSystem)} 处，${formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}${routeTerrainOverlay.highest.elevationM > crossSectionGeometry.maxHeightM ? '，高于图框上限，未在图中标点' : ''}` : '尚无足够的路线地形点绘制地形线'} · 地形采样与天气分析点分开，地形采样不会提高天气分辨率。</div><div class="route-surface-gust-note"><strong>路线分析点地面阵风</strong>{#if routeSurfaceGustSummary.maximum}<span>最高 {formatWind(routeSurfaceGustSummary.maximum.gustMs, 1, unitSystem)} · {routeSurfaceGustSummary.maximum.name} · {formatDistance(routeSurfaceGustSummary.maximum.distanceM, 1, unitSystem)}</span>{:else}<span>Windy 当前时刻未返回地面阵风。</span>{/if}<small>{routeSurfaceGustSummary.availableCount}/{routeSurfaceGustSummary.totalCount} 个点有值；这是地面字段，不代表高空。</small></div>
 					<div class="precipitation-section"><div class="precipitation-heading"><strong>路线地面降水</strong><span>单位：{precipitationUnit(unitSystem)} / {precipitationIntervalLabel}</span></div>{#if routePrecipitationGeometry.marks.some(mark => mark.available)}<div class="precipitation-chart"><svg viewBox={`0 0 ${routeChartWidth} 120`} preserveAspectRatio="none" role="img" aria-label="沿路线的地面降水和雪降水量"><line x1={routePrecipitationGeometry.plot.left} x2={routePrecipitationGeometry.plot.right} y1={routePrecipitationGeometry.plot.bottom} y2={routePrecipitationGeometry.plot.bottom} class="viewer-axis-line"/><line x1={routePrecipitationGeometry.plot.left} x2={routePrecipitationGeometry.plot.right} y1={routePrecipitationGeometry.plot.top} y2={routePrecipitationGeometry.plot.top} class="viewer-grid-line"/><text x="3" y={routePrecipitationGeometry.plot.top + 5} class="viewer-axis-label">{formatPrecipitation(routePrecipitationGeometry.scaleMaxMm, 1, unitSystem)}</text><text x="18" y={routePrecipitationGeometry.plot.bottom + 5} class="viewer-axis-label">0</text>{#each routePrecipitationGeometry.marks as mark (mark.key)}{#if mark.amountMm !== null}<rect x={mark.x - mark.width - 1} y={mark.totalY} width={mark.width} height={Math.max(1, mark.totalHeight)} class="precipitation-total-bar"><title>{mark.name}：降水 {formatPrecipitation(mark.amountMm, 1, unitSystem)} / {precipitationIntervalLabel}</title></rect>{/if}{#if mark.snowMm !== null}<rect x={mark.x + 1} y={mark.snowY} width={mark.width} height={Math.max(1, mark.snowHeight)} class="precipitation-snow-bar"><title>{mark.name}：雪降水 {formatPrecipitation(mark.snowMm, 1, unitSystem)} / {precipitationIntervalLabel}</title></rect>{/if}<circle cx={mark.x} cy={routePrecipitationGeometry.plot.bottom} r="3" class="precipitation-sample-dot"><title>{mark.available ? `${mark.name} · ${formatDistance(mark.distanceM, 1, unitSystem)}` : `${mark.name} · 降水数据缺测`}</title></circle>{#if mark.distanceM === 0 || mark.distanceM === routeDistanceM || routePrecipitationGeometry.marks.length <= 10}<text x={mark.x} y="114" text-anchor="middle" class="viewer-axis-label">{formatDistance(mark.distanceM, 1, unitSystem)}</text>{/if}{/each}</svg></div><div class="viewer-chart-legend"><span><i class="precipitation-key-total"></i>降水量</span><span><i class="precipitation-key-snow"></i>雪降水量</span><span>按预报时段累计；不是降水强度。地面字段不代表各高空高度的降水。</span></div>{:else}<p class="viewer-empty-note">当前模型未返回沿线地面降水数据。</p>{/if}</div>
-					<div class="route-sample-buttons" aria-label="选择路线分析点">{#each routeWeatherSamples as sample, index (sample.key)}<button class:active={routeFocusedIndex === index} on:click={() => routeFocusedIndex = index}><strong>{sample.name}</strong><span>{formatDistance(sample.distanceM, 1, unitSystem)}</span></button>{/each}</div>
+					<div class="route-sample-buttons" aria-label="选择路线分析点">{#each routeWeatherSamples as sample, index (sample.key)}<button class:active={routeFocusedIndex === index} on:click={() => selectRouteSample(index)}><strong>{sample.name}</strong><span>{formatDistance(sample.distanceM, 1, unitSystem)}</span></button>{/each}</div>
 					{#if routeComparisonRows.length}
 						<section class="route-comparison-section">
 							<div class="viewer-section-head"><div><p class="viewer-kicker">路线逐点对照</p><h2>各分析点天气摘要</h2></div><span>{routeComparisonRows.filter(row => row.hasForecast).length}/{routeComparisonRows.length} 点已读取 · 按路线顺序</span></div>
@@ -278,7 +299,7 @@
 							<div class="route-comparison-grid">
 								{#each routeComparisonRows as row (row.key)}
 									<article class:route-comparison-card--active={routeWeatherSamples[routeFocusedIndex]?.key === row.key} class="route-comparison-card">
-										<button type="button" class="route-comparison-select" disabled={!row.hasForecast} aria-pressed={routeWeatherSamples[routeFocusedIndex]?.key === row.key} on:click={() => routeFocusedIndex = routeWeatherSamples.findIndex(sample => sample.key === row.key)}>
+										<button type="button" class="route-comparison-select" disabled={!row.hasForecast} aria-pressed={routeWeatherSamples[routeFocusedIndex]?.key === row.key} on:click={() => selectRouteSample(routeWeatherSamples.findIndex(sample => sample.key === row.key))}>
 											<span>{row.name}</span><small>{row.lat === null || row.lon === null ? '坐标缺测' : `${row.lat.toFixed(5)}°，${row.lon.toFixed(5)}°`}</small>
 											<strong>{row.distanceM === null ? '距离缺测' : `沿线 ${formatDistance(row.distanceM, 1, unitSystem)}`}</strong>
 										</button>
@@ -364,6 +385,8 @@
 
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
+	import ObservationPanel from './ObservationPanel.svelte';
+	import { destination } from './lib/observation-geometry.js';
 	import { getElevation, getMeteogramForecastData, getPointForecastData } from '@windy/fetch';
 	import store from '@windy/store';
 	import { map } from '@windy/map';
@@ -384,11 +407,63 @@
 	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; error?: string };
 
 	const elevationCache = new Map<string, number | null>();
-	const weatherProfileCache = createMemoryCache({ ttlMs: 5 * 60_000, maxEntries: 48 });
+	const weatherProfileCache = createMemoryCache({ ttlMs: 5 * 60_000, maxEntries: 96 });
 	let selectedModel: ForecastModel = 'ecmwf';
 	let unitSystem: 'metric' | 'imperial' = 'metric';
 	let forecastContextReady = false;
-	let selectionMode: 'point' | 'route' = 'point';
+	let selectionMode: 'point' | 'route' | 'observation' = 'observation';
+	let observationPanel: any;
+	let observationLayer: any;
+	let observationMapFrame: number | null = null;
+	let observationMapDetail: any = null;
+	let observationMapKey = '';
+	async function observationElevation(point: {lat:number;lon:number}, signal: AbortSignal) {
+		const key = elevationRequestKey(point);
+		if (elevationCache.has(key)) return elevationCache.get(key) ?? null;
+		const value = payloadNumber(await withWindyRequestLimit(s => getElevation(point.lat, point.lon, { abortSignal:s }), key, signal));
+		if (!signal.aborted && value !== null) elevationCache.set(key,value);
+		return value;
+	}
+	async function observationWeather(point: {lat:number;lon:number}, model: ForecastModel, signal: AbortSignal) {
+		return loadWeatherProfile(point, model, 'multiload', 1, signal);
+	}
+	function drawObservationMap(event: CustomEvent) {
+		observationMapDetail = event.detail;
+		if (observationMapFrame !== null) return;
+		observationMapFrame = requestAnimationFrame(() => { observationMapFrame = null; renderObservationMap(observationMapDetail); });
+	}
+	function renderObservationMap(detail: any) {
+		if (!observationLayer) return;
+		const key = JSON.stringify([detail.clear, detail.camera, detail.peak, detail.radiusM, detail.selectedSector, detail.focusPoint, (detail.result?.sectors ?? []).map((s:any)=>[s.id,s.status,s.cloud?.status,s.sight?.path?.length]), (detail.result?.solarPaths ?? []).map((s:any)=>[s.sectorId,s.timestampMs,s.status])]);
+		if (key === observationMapKey) return;
+		observationMapKey = key;
+		observationLayer.clearLayers();
+		const {camera,peak,radiusM,result,selectedSector,clear,focusPoint} = detail;
+		if (clear) return;
+		for (const [point,label] of [[camera,'机位'],[peak,'山峰']]) {
+			if (!point) continue;
+			const name = document.createElement('span');name.textContent=`${label} · ${point.name ?? label}`;
+			L.circleMarker([point.lat,point.lon],{radius:7,color:'#244953',fillColor:label==='机位'?'#a4d5c3':'#eeb66d',fillOpacity:1}).bindTooltip(name,{permanent:true}).addTo(observationLayer);
+		}
+		if (peak) L.circle([peak.lat,peak.lon],{radius:radiusM,color:'#82c2b6',weight:1,fillOpacity:0.05}).addTo(observationLayer);
+		if (camera && peak) L.polyline([[camera.lat,camera.lon],[peak.lat,peak.lon]],{color:'#eeb66d',weight:2}).addTo(observationLayer);
+		for (const sector of result?.sectors ?? []) {
+			for (const cell of sector.cells ?? []) {
+				const corners = [315,45,135,225].map(angle => destination(cell, angle, radiusM / 8 * Math.SQRT2));
+				L.polygon(corners.map(p=>[p.lat,p.lon]),{color:sector.status==='blocked'?'#eeb66d':'#82c2b6',weight:0.5,fillOpacity:sector.id===selectedSector?0.22:0.06,interactive:false}).addTo(observationLayer);
+			}
+			const p=sector.representative;if(!p)continue;
+			const label=document.createElement('span');label.textContent=`分区 ${sector.id+1} · ${sector.status==='blocked'?'遮挡信号':sector.status==='clear'?'采样通视':'资料不足'}`;
+			L.circleMarker([p.lat,p.lon],{radius:selectedSector===sector.id?9:4,color:sector.status==='blocked'?'#eeb66d':'#82c2b6',fillOpacity:0.8}).bindTooltip(label).addTo(observationLayer);
+			if (sector.id===selectedSector && sector.sight?.path) L.polyline(sector.sight.path.map((v:any)=>[v.lat,v.lon]),{color:'#a4d5c3',weight:3}).addTo(observationLayer);
+		}
+		for (const path of result?.solarPaths ?? []) L.polyline(path.points.map((v:any)=>[v.lat,v.lon]),{color:'#eeb66d',weight:1,dashArray:'5 5'}).addTo(observationLayer);
+		if (focusPoint && isValidCoordinate(focusPoint)) {
+			const label=document.createElement('span');label.textContent='相关遮挡／净空证据点';
+			L.circleMarker([focusPoint.lat,focusPoint.lon],{radius:10,color:'#eeb66d',weight:3}).bindTooltip(label,{permanent:true}).addTo(observationLayer);
+			map.panTo([focusPoint.lat,focusPoint.lon]);
+		}
+	}
 	let selectedPoint: RoutePoint | null = null;
 	let manualCoordinateText = '';
 	let coordinateProvenance = '';
@@ -412,12 +487,16 @@
 	let profileViewerTrigger: HTMLElement | null = null;
 	let profileViewerEnteredFullscreen = false;
 	let forecastStep: 1 | 3 = 3;
+	const requestedForecastDays = 15;
 	let targetAltitudeM = 5_000;
 	let trendChartWidth = 720;
 	let routeChartWidth = 640;
 	let routeChartHeight = 640;
 	let activeTrendPointerId: number | null = null;
 	let activeRouteAltitudePointerId: number | null = null;
+	let routePointerReadout: { sampleIndex: number; altitudeM: number } | null = null;
+	let routePointerFrame: number | null = null;
+	let pendingRoutePointer: { sampleIndex: number; altitudeM: number; dragging: boolean } | null = null;
 	let profileRangeStartM: number | null = null;
 	let profileRangeEndM: number | null = null;
 	let profileRangeStepM = 250;
@@ -579,6 +658,12 @@
 		geometry: buildAltitudeTrend(levelsIncludingModelSurface(focusedRouteFrame), metric.field, focusedRouteTerrainM, 9_000, trendChartWidth, 320),
 	}));
 	$: focusedRouteTargetResult = focusedRouteFrame ? interpolateAtHeight(focusedRouteFrame, focusedRouteTargetAltitudeMsl, focusedRouteTerrainM) : null;
+	$: routeReadoutSample = routeWeatherSamples[routePointerReadout?.sampleIndex ?? routeFocusedIndex] ?? null;
+	$: routeReadoutAltitudeM = routePointerReadout?.altitudeM ?? Number(targetAltitudeM);
+	$: routeReadoutTerrainM = Number.isFinite(routeReadoutSample?.terrainElevationM) ? routeReadoutSample?.terrainElevationM : routeReadoutSample?.profile?.modelElevationM ?? null;
+	$: routeReadoutFrame = frameAtTimestamp(routeReadoutSample?.profile?.frames, effectiveForecastTimestampMs);
+	$: routeReadoutWeather = routeReadoutFrame ? interpolateAtHeight(routeReadoutFrame, routeReadoutAltitudeM, routeReadoutTerrainM) : null;
+	$: routeReadoutNotice = !routeReadoutFrame ? '该点当前时次暂无天气数据' : routeReadoutWeather?.reason === 'below-terrain' ? '此海拔低于该点地形，没有可用天气值' : !routeReadoutWeather?.ok ? '此海拔没有有效层包围，不能外推；缺测不代表无云' : '数值来自该采样点；层间插值不是现场实测，点间云区仍为估算';
 	$: focusedRouteCloudAssessment = assessCloudAtHeight(focusedRouteTargetResult, focusedRouteHumidityBands, focusedRouteTargetAltitudeMsl, focusedRouteFrame?.cloudBaseM, unitSystem);
 	$: focusedRoutePotentialIcingLevels = potentialIcingLevels(focusedRouteFrame, focusedRouteTerrainM);
 	$: focusedRouteFreezingLevels = freezingLevelCrossings(focusedRouteFrame, focusedRouteTerrainM, 9_000);
@@ -600,7 +685,7 @@
 		return terrainSamples.length ? '该点地形缺测' : '地形未读取';
 	}
 	function pointForecastRequestKey(model: ForecastModel, source: 'detail' | 'multiload', point: { lat: number; lon: number }, step = forecastStep) {
-		return `forecast:${model}:${source}:${step}:2:${requestCoordinateKey(point)}`;
+		return `forecast:${model}:${source}:${step}:${requestedForecastDays}:${requestCoordinateKey(point)}`;
 	}
 	function elevationRequestKey(point: { lat: number; lon: number }) {
 		return `elevation:${requestCoordinateKey(point)}`;
@@ -620,7 +705,7 @@
 			const payload = await withWindyRequestLimit(requestSignal => getPointForecastData(model, {
 				lat: point.lat,
 				lon: point.lon,
-				days: 2,
+				days: requestedForecastDays,
 				step,
 				source,
 			}, profileIncludes, { abortSignal: requestSignal }), pointForecastRequestKey(model, source, point, step), signal);
@@ -701,6 +786,7 @@
 	}
 
 	function closePlugin() {
+		observationPanel?.cancel();
 		broadcast.emit('rqstOpen', 'menu');
 	}
 
@@ -720,6 +806,7 @@
 	}
 
 	function closeProfileViewer() {
+		resetRoutePointerInteraction();
 		profileViewer = null;
 		if (document.fullscreenElement === profileViewerElement && typeof document.exitFullscreen === 'function') {
 			void document.exitFullscreen().catch(() => {});
@@ -774,6 +861,7 @@
 	function handleMapClick(event: unknown) {
 		const coordinate = extractCoordinate(event);
 		if (!coordinate) return;
+		if (selectionMode === 'observation') { observationPanel?.acceptMapPoint(coordinate); return; }
 		if (selectionMode === 'point') {
 			selectPoint({ id: `map-${Date.now()}`, name: '地图选点', ...coordinate }, 'Windy 地图坐标，按原值使用');
 			return;
@@ -811,7 +899,7 @@
 		}, resolved.source);
 	}
 
-	function setSelectionMode(mode: 'point' | 'route') {
+	function setSelectionMode(mode: 'point' | 'route' | 'observation') {
 		if (selectionMode === mode) return;
 		if (selectionMode === 'point') cancelPointProfile();
 		else {
@@ -895,9 +983,10 @@
 		routeWeatherSpacingM = spacing;
 	}
 
-	function drawMapItems(mode: 'point' | 'route', waypoints: RoutePoint[], pointSelection: RoutePoint | null) {
+	function drawMapItems(mode: 'point' | 'route' | 'observation', waypoints: RoutePoint[], pointSelection: RoutePoint | null) {
 		if (!routeLayer) return;
 		routeLayer.clearLayers();
+		if (mode === 'observation') return;
 		if (mode === 'route' && waypoints.length > 1) {
 			L.polyline(waypoints.map(point => [point.lat, point.lon]), { color: '#82d1d5', weight: 3, opacity: 0.92, dashArray: '7 6', interactive: false }).addTo(routeLayer);
 		}
@@ -1067,9 +1156,11 @@
 
 	function observeRouteChartWidth(node: HTMLDivElement) {
 		const updateWidth = () => {
-			const { width, height } = node.getBoundingClientRect();
-			if (Number.isFinite(width) && width > 0) routeChartWidth = Math.max(320, Math.round(width));
-			if (Number.isFinite(height) && height > 0) routeChartHeight = Math.max(320, Math.round(height));
+			const { width, height } = (node.querySelector('svg') ?? node).getBoundingClientRect();
+			const nextWidth = Math.max(320, Math.round(width));
+			const nextHeight = Math.max(320, Math.round(height));
+			if (Number.isFinite(width) && width > 0 && nextWidth !== routeChartWidth) routeChartWidth = nextWidth;
+			if (Number.isFinite(height) && height > 0 && nextHeight !== routeChartHeight) routeChartHeight = nextHeight;
 		};
 		const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(updateWidth) : null;
 		observer?.observe(node);
@@ -1109,14 +1200,66 @@
 		setTargetAltitudeFromMsl(heightM);
 	}
 
-	function setRouteAltitudeFromPointer(event: PointerEvent) {
-		const svg = (event.currentTarget as SVGGElement).ownerSVGElement;
+	function routePositionFromPointer(event: PointerEvent, snapToLayer = false) {
+		const target = event.currentTarget as SVGElement;
+		const svg = target instanceof SVGSVGElement ? target : target.ownerSVGElement;
 		const bounds = svg?.getBoundingClientRect();
-		if (!bounds || bounds.height <= 0) return;
+		if (!bounds || bounds.height <= 0 || bounds.width <= 0) return null;
 		const { plot, height, maxHeightM } = crossSectionGeometry;
 		const chartY = (event.clientY - bounds.top) / bounds.height * height;
 		const fraction = Math.min(1, Math.max(0, (plot.bottom - chartY) / (plot.bottom - plot.top)));
-		setTargetAltitudeFromMsl(Math.round(fraction * maxHeightM / 50) * 50);
+		const chartX = (event.clientX - bounds.left) / bounds.width * crossSectionGeometry.width;
+		const mark = crossSectionGeometry.sampleMarks.find(mark => chartX >= mark.left && chartX <= mark.left + mark.width)
+			?? (chartX < plot.left ? crossSectionGeometry.sampleMarks[0] : crossSectionGeometry.sampleMarks.at(-1));
+		if (!mark) return null;
+		const nearestLevel = snapToLayer ? crossSectionGeometry.levelMarks
+			.filter(level => level.sampleIndex === mark.sampleIndex && Math.abs(level.y - chartY) <= 8 * height / bounds.height)
+			.sort((a, b) => Math.abs(a.y - chartY) - Math.abs(b.y - chartY))[0] : null;
+		return { sampleIndex: mark.sampleIndex, altitudeM: nearestLevel?.heightM ?? Math.round(fraction * maxHeightM / 50) * 50 };
+	}
+
+	function flushRoutePointer() {
+		if (routePointerFrame !== null) cancelAnimationFrame(routePointerFrame);
+		routePointerFrame = null;
+		const next = pendingRoutePointer;
+		pendingRoutePointer = null;
+		if (!next) return;
+		if (!routePointerReadout || routePointerReadout.sampleIndex !== next.sampleIndex || routePointerReadout.altitudeM !== next.altitudeM) {
+			routePointerReadout = { sampleIndex: next.sampleIndex, altitudeM: next.altitudeM };
+		}
+		if (next.dragging && activeRouteAltitudePointerId !== null) {
+			if (targetAltitudeM !== next.altitudeM) setTargetAltitudeFromMsl(next.altitudeM);
+			if (routeFocusedIndex !== next.sampleIndex) routeFocusedIndex = next.sampleIndex;
+		}
+	}
+
+	function queueRoutePointer(event: PointerEvent, dragging: boolean) {
+		const position = routePositionFromPointer(event, !dragging);
+		if (!position) return;
+		pendingRoutePointer = { ...position, dragging };
+		if (routePointerFrame === null) routePointerFrame = requestAnimationFrame(flushRoutePointer);
+	}
+
+	function hoverRouteChart(event: PointerEvent) {
+		if (activeRouteAltitudePointerId === null) queueRoutePointer(event, false);
+	}
+
+	function clearRoutePointerReadout() {
+		if (activeRouteAltitudePointerId !== null) return;
+		if (routePointerFrame !== null) cancelAnimationFrame(routePointerFrame);
+		routePointerFrame = null;
+		pendingRoutePointer = null;
+		routePointerReadout = null;
+	}
+
+	function resetRoutePointerInteraction() {
+		activeRouteAltitudePointerId = null;
+		clearRoutePointerReadout();
+	}
+
+	function selectRouteSample(index: number) {
+		clearRoutePointerReadout();
+		routeFocusedIndex = index;
 	}
 
 	function beginRouteAltitudeDrag(event: PointerEvent) {
@@ -1125,17 +1268,19 @@
 		const handle = event.currentTarget as SVGGElement;
 		try { handle.setPointerCapture(event.pointerId); } catch { return; }
 		activeRouteAltitudePointerId = event.pointerId;
-		handle.focus();
-		setRouteAltitudeFromPointer(event);
+		handle.focus({ preventScroll: true });
+		queueRoutePointer(event, true);
 	}
 
 	function moveRouteAltitudeDrag(event: PointerEvent) {
-		if (activeRouteAltitudePointerId === event.pointerId) setRouteAltitudeFromPointer(event);
+		if (activeRouteAltitudePointerId === event.pointerId) queueRoutePointer(event, true);
 	}
 
 	function endRouteAltitudeDrag(event: PointerEvent) {
 		if (activeRouteAltitudePointerId !== event.pointerId) return;
+		flushRoutePointer();
 		activeRouteAltitudePointerId = null;
+		routePointerReadout = null;
 		const handle = event.currentTarget as SVGGElement;
 		try { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); } catch { /* Pointer capture may already have ended. */ }
 	}
@@ -1149,6 +1294,7 @@
 		const next = altitudeAfterSliderKey(Number(targetAltitudeM), event.key, maxHeightM, 50);
 		if (next === null) return;
 		event.preventDefault();
+		if (profileViewer === 'route') clearRoutePointerReadout();
 		setTargetAltitudeFromMsl(next);
 	}
 
@@ -1229,7 +1375,7 @@
 	function handleRouteSampleKeydown(event: KeyboardEvent, index: number) {
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		event.preventDefault();
-		routeFocusedIndex = index;
+		selectRouteSample(index);
 	}
 
 	function routeMetricValue(value: number | null, system: 'metric' | 'imperial' = unitSystem) {
@@ -1667,12 +1813,14 @@
 		productListenerId = store.on('product', value => selectModel(value === 'icon' ? 'icon' : 'ecmwf'));
 		singleclick.on(config.name, handleMapClick);
 		routeLayer = L.layerGroup().addTo(map);
+		observationLayer = L.layerGroup().addTo(map);
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 	});
 
 	$: if (routeLayer) drawMapItems(selectionMode, routePoints, selectedPoint);
 
 		onDestroy(() => {
+			resetRoutePointerInteraction();
 			pointRequestController?.abort();
 			routeWeatherRequestController?.abort();
 			terrainRequestController?.abort();
@@ -1690,6 +1838,8 @@
 		if (document.fullscreenElement === profileViewerElement && typeof document.exitFullscreen === 'function') void document.exitFullscreen().catch(() => {});
 		elevationCache.clear();
 		weatherProfileCache.clear();
+		observationLayer?.remove();
+		if (observationMapFrame !== null) cancelAnimationFrame(observationMapFrame);
 	});
 </script>
 
@@ -2108,6 +2258,24 @@
 	.route-sample-hit { fill: transparent; fill-opacity: 0; stroke: none; cursor: pointer; pointer-events: all; }
 	.route-sample-hit:focus { fill: #c6eaff; fill-opacity: .07; stroke: #83c8ff; stroke-width: 2; }
 	.route-altitude-control { cursor: ns-resize; touch-action: none; }
+	.route-altitude-control:focus { outline: none; }
+	.profile-viewer { overflow-anchor: none; scrollbar-gutter: stable; }
+	.route-nearest-level-slot { min-height: 44px; }
+	.route-nearest-level-slot button { min-height: 40px; }
+	.route-point-readout { margin: 10px 0; padding: 12px 14px; border: 1px solid #34445b; background: #11182a; font-variant-numeric: tabular-nums; }
+	.route-readout-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; height: 28px; }
+	.route-readout-heading strong { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b6f6bc; }
+	.route-readout-heading > span { flex-shrink: 0; color: #b3c0d4; font-size: 13px; }
+	.route-readout-values { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+	.route-readout-values > div { display: flex; flex-direction: column; min-width: 0; height: 78px; }
+	.route-readout-values span, .route-readout-values small { color: #b3c0d4; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+	.route-readout-values strong { font-size: 21px; color: #f0f3fa; white-space: nowrap; }
+	.route-point-readout p { margin: 0; height: 24px; font-size: 13px; color: #b3c0d4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	@media (max-width: 900px) {
+		.route-readout-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+		.route-readout-heading { display: block; height: 52px; }
+		.route-readout-heading strong, .route-readout-heading > span { display: block; }
+	}
 	.route-altitude-hit { fill: transparent; pointer-events: all; }
 	.route-altitude-visible, .route-altitude-chevron, .route-altitude-readout { pointer-events: none; }
 	.route-altitude-grip { fill: #63cf68; stroke: #13251a; stroke-width: 1.5; }
