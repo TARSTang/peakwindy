@@ -28,7 +28,7 @@
 		position: absolute;
 		inset: 4px 0;
 		border-radius: 999px;
-		background: linear-gradient(90deg, #e9d77d 0 40%, #a8d97c 40% 60%, #5bc4a1 60% 75%, #3cb6d0 75% 90%, #a88cff 90% 100%);
+		background: linear-gradient(90deg, var(--wx-humidity-very-low) 0 40%, var(--wx-humidity-low) 40% 60%, var(--wx-humidity-moderate) 60% 75%, var(--wx-humidity-high) 75% 90%, var(--wx-humidity-very-high) 90% 100%);
 	}
 	.humidity-gauge-indicator {
 		position: absolute;

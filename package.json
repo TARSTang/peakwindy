@@ -1,6 +1,6 @@
 {
   "name": "windy-plugin-high-altitude-profile",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Private Windy plugin for high-altitude and route weather profile analysis",
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "rollup -w -c",
     "build": "node scripts/build.mjs",
-    "test": "node test/route.test.js && node test/coordinates.test.js && node test/async.test.js && node test/clipboard.test.js && node test/profile.test.js && node test/units.test.js && node test/observation.test.js"
+    "test": "node test/route.test.js && node test/coordinates.test.js && node test/async.test.js && node test/clipboard.test.js && node test/profile.test.js && node test/units.test.js"
   },
   "dependencies": {
     "@windycom/plugin-devtools": "^3.0.3"
