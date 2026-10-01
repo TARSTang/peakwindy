@@ -39,7 +39,7 @@
 				<button class:active={selectionMode === 'route'} aria-pressed={selectionMode === 'route'} on:click={() => setSelectionMode('route')}>路线</button>
 			</div>
 		</div>
-		<p class="section-copy">{selectionMode === 'point' ? '可在地图点选位置，也可从 Windy 地点菜单直接打开。' : '按顺序点击起点、转折点和终点；点名称可修改，路线按实地距离计算。'}</p>
+		<p class="section-copy">{selectionMode === 'point' ? '可在地图点选位置，也可从 Windy 地点菜单直接打开。' : '按顺序点击地图或输入坐标添加路线点；点名称可修改并收藏，路线按实地距离计算。'}</p>
 
 		{#if selectionMode === 'point'}
 			<div class="coordinate-import">
@@ -55,13 +55,14 @@
 				selectLabel="使用此地点"
 				on:select={handleFavoritePointSelect}
 			/>
+			<BuiltInPlaces selectLabel="使用此地点" on:select={handleBuiltInPointSelect} />
 			{#if selectedPoint}
 			<div class="coordinate-card">
 				<div><span class="tiny-label">分析地点</span><strong>{selectedPoint.name}</strong></div>
 				<div class="coord-value">{selectedPoint.lat.toFixed(4)}° · {selectedPoint.lon.toFixed(4)}°</div>
 				<div class="coordinate-provenance">{coordinateProvenance}</div>
 				<div class="point-facts" aria-live="polite">
-					<span>{pointElevationLoading ? '正在读取地形…' : pointElevationM === null ? '地形高度缺测' : `地形海拔 ${formatHeight(pointElevationM, 0, unitSystem)}`}</span>
+					<span>{manualPointElevationM !== null ? `手动校正海拔 ${formatHeight(manualPointElevationM, 0, unitSystem)}` : pointElevationLoading ? '正在读取地形…' : pointElevationM === null ? '地形高度缺测' : `地形海拔 ${formatHeight(pointElevationM, 0, unitSystem)}`}</span>
 					<span>{pointProfileLoading ? `正在读取 ${selectedModel.toUpperCase()} 天气…` : pointProfile?.ok ? pointProfile.hasVerticalLayers ? `0–9000 米内地形以上高度层 ${pointChartGroundLevels.length}/${pointChartModelLevels.length} 个` : 'Windy 仅返回近地面天气，未返回垂直层' : pointProfileError ? '天气读取失败' : '天气未读取'}</span>
 				</div>
 				{#if pointElevationError}<span class="point-error">{pointElevationError}</span>{/if}
@@ -97,7 +98,16 @@
 					{#if routePoints.length > 0}<button class="text-button danger-text" on:click={clearRoute}>清空</button>{/if}
 				</div>
 			</div>
+			<form class="coordinate-entry route-coordinate-entry" on:submit|preventDefault={appendManualRoutePoint}>
+				<label>路线点坐标（经度,纬度）<input type="text" inputmode="text" autocomplete="off" bind:value={routeCoordinateText} placeholder="g101.88167968,29.59240010" aria-label="路线点奥维坐标，经度、纬度，国内坐标带 g" /></label>
+				<label>点名称（可选）<input type="text" maxlength="32" bind:value={routePointNameText} placeholder="留空使用起点、转折点或终点" aria-label="新路线点名称，可留空" /></label>
+				<button type="submit" class="small-button">添加路线点</button>
+			</form>
+			<p class="coordinate-format-note route-coordinate-note">支持奥维坐标；中国大陆坐标带 g 会转换为 Windy 坐标。添加后可改名并点 ☆ 收藏；名称留空时自动命名。</p>
+			{#if routeCoordinateError}<p class="point-error" role="alert">{routeCoordinateError}</p>{/if}
+			{#if routeCoordinateStatus}<p class="load-status" role="status">{routeCoordinateStatus}</p>{/if}
 			<FavoritePlaces currentPlace={null} selectLabel="添加到路线" on:select={appendFavoriteRoutePoint} />
+			<BuiltInPlaces selectLabel="添加到路线" on:select={appendBuiltInRoutePoint} />
 			{#if routePoints.length}
 				<ol class="waypoint-list">
 					{#each routePoints as point, index (point.id)}
@@ -263,7 +273,7 @@
 	<div class="route-readout-heading"><strong>{routePointerReadout ? '指向位置 · 最近采样点' : '查询线 · 已选采样点'}：{routeReadoutSample?.name ?? '尚未选点'}</strong><span>沿线 {formatDistance(routeReadoutSample?.distanceM, 1, unitSystem)} · {selectedModel.toUpperCase()} · {effectiveForecastTimestampMs ? formatForecastTime(effectiveForecastTimestampMs) : '暂无时次'}</span></div>
 	<div class="route-readout-values">
 		<div><span>查看海拔</span><strong>{formatHeight(routeReadoutAltitudeM, 0, unitSystem)}</strong><small>{routePointerReadout && activeRouteAltitudePointerId === null ? '悬停高度；绿线未改变' : '绿色查询线高度'}</small></div>
-		<div><span>该点地形</span><strong>{formatHeight(routeReadoutTerrainM, 0, unitSystem)}</strong><small>{Number.isFinite(routeReadoutSample?.terrainElevationM) ? 'Windy 地形' : '模式地形或缺测'}</small></div>
+		<div><span>该点地形</span><strong>{formatHeight(routeReadoutTerrainM, 0, unitSystem)}</strong><small>{routeReadoutSample?.terrainSource === 'manual' ? '手动校正海拔' : Number.isFinite(routeReadoutSample?.terrainElevationM) ? 'Windy 地形' : '模式地形或缺测'}</small></div>
 		<div><span>温度</span><strong>{formatTemperature(routeReadoutWeather?.temperatureC, 1, unitSystem)}</strong><small>{methodLabel(routeReadoutWeather?.methods?.temperature)}</small></div>
 		<div><span>相对湿度</span><strong>{formatValue(routeReadoutWeather?.humidityPct, 0, '%')}</strong><HumidityGauge value={routeReadoutWeather?.humidityPct} /><small>{methodLabel(routeReadoutWeather?.methods?.humidity)}</small></div>
 		<div><span>风速</span><strong>{formatWind(routeReadoutWeather?.windSpeedMs, 1, unitSystem)}</strong><small>{formatWindDirection(routeReadoutWeather?.windDirectionDeg)} · {methodLabel(routeReadoutWeather?.methods?.wind)}</small></div>
@@ -300,7 +310,7 @@
 											<strong>{row.distanceM === null ? '距离缺测' : `沿线 ${formatDistance(row.distanceM, 1, unitSystem)}`}</strong>
 										</button>
 						<div class="route-comparison-values">
-							<div><span>地形海拔</span><strong>{formatHeight(row.terrainElevationM, 0, unitSystem)}</strong><small>{row.terrainSource === 'windy' ? 'Windy 地形' : row.terrainSource === 'model' ? '模式地形' : '来源未知'}</small></div>
+					<div><span>地形海拔</span><strong>{formatHeight(row.terrainElevationM, 0, unitSystem)}</strong><small>{row.terrainSource === 'manual' ? '手动校正海拔' : row.terrainSource === 'windy' ? 'Windy 地形' : row.terrainSource === 'model' ? '模式地形' : '来源未知'}</small></div>
 											<div><span>查询点海拔</span><strong>{formatHeight(row.targetHeightMsl, 0, unitSystem)}</strong><small>海拔查询</small></div>
 											<div><span>温度</span><strong>{formatTemperature(row.weather.temperatureC, 1, unitSystem)}</strong><small>{methodLabel(row.weather.methods?.temperature)}</small></div>
 											<div><span>相对湿度</span><strong>{formatValue(row.weather.humidityPct, 0, '%')}</strong><small>{methodLabel(row.weather.methods?.humidity)}</small></div>
@@ -384,6 +394,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import HumidityGauge from './HumidityGauge.svelte';
 	import FavoritePlaces from './FavoritePlaces.svelte';
+	import BuiltInPlaces from './BuiltInPlaces.svelte';
 	import { assessGroundFog, groundFogStatusLabel } from './lib/fog.js';
 	import { getElevation, getMeteogramForecastData, getPointForecastData } from '@windy/fetch';
 	import store from '@windy/store';
@@ -401,10 +412,10 @@
 		import { distanceToDisplay, distanceUnit, heightFromDisplay, heightToDisplay, heightUnit, parseAltitudeList, precipitationToDisplay, precipitationUnit, temperatureFromDisplay, temperatureToDisplay, temperatureUnit, windFromDisplay, windToDisplay, windUnit } from './lib/units.js';
 
 	type ForecastModel = 'ecmwf' | 'icon';
-	type RoutePoint = { id: string; name: string; nameSource?: 'automatic' | 'custom'; lat: number; lon: number };
-	type TerrainPoint = { lat: number; lon: number; distanceM: number; elevationM: number | null };
+	type RoutePoint = { id: string; name: string; nameSource?: 'automatic' | 'custom'; lat: number; lon: number; elevationM?: number };
+	type TerrainPoint = { lat: number; lon: number; distanceM: number; elevationM: number | null; elevationSource?: 'manual' | 'windy' | null };
 	type WeatherProfile = (ReturnType<typeof parseWindyProfile> | ReturnType<typeof parseWindyLegacyProfile>) & { dataSource?: string; verticalDataNotice?: string; servedModelSource?: 'response' | 'request' | 'unknown'; diagnosticAlternates?: WeatherProfile[] };
-	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; error?: string };
+	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; terrainSource?: 'manual' | 'windy' | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; error?: string };
 
 	const elevationCache = new Map<string, number | null>();
 	const weatherProfileCache = createMemoryCache({ ttlMs: 5 * 60_000, maxEntries: 96 });
@@ -414,6 +425,10 @@
 	let selectionMode: 'point' | 'route' = 'point';
 	let selectedPoint: RoutePoint | null = null;
 	let manualCoordinateText = '';
+	let routeCoordinateText = '';
+	let routePointNameText = '';
+	let routeCoordinateError = '';
+	let routeCoordinateStatus = '';
 	let coordinateProvenance = '';
 	let coordinateError = '';
 	let pointElevationM: number | null = null;
@@ -508,7 +523,7 @@
 	$: pointGroundFog = activePointFrame ? assessGroundFog(pointProfile, effectiveForecastTimestampMs ?? activePointFrame.timestampMs) : null;
 	$: resolvedPointTerrain = resolveTerrainElevation(pointElevationM, pointProfile?.modelElevationM ?? null, manualPointElevationM);
 	$: pointTerrainM = resolvedPointTerrain.heightM;
-	$: pointTerrainSource = resolvedPointTerrain.source === 'manual' ? '手动点位海拔' : resolvedPointTerrain.source === 'windy' ? 'Windy 地形接口' : '模式地形';
+	$: pointTerrainSource = resolvedPointTerrain.source === 'manual' ? '手动校正海拔' : resolvedPointTerrain.source === 'windy' ? 'Windy 地形接口' : '模式地形';
 	$: pointChartGeometry = buildVerticalChartPoints(levelsIncludingModelSurface(activePointFrame), pointTerrainM, 9_000, 360, 270);
 	$: pointChartModelLevels = activePointFrame?.levels.filter(level => level.heightM >= 0 && level.heightM <= 9_000) ?? [];
 	$: pointChartGroundLevels = pointChartModelLevels.filter(level => !Number.isFinite(pointTerrainM) || level.heightM >= pointTerrainM);
@@ -582,9 +597,11 @@
 	$: routeComparisonInputs = analysisPoints.map((point, index) => {
 		const key = `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`;
 		const loaded = routeComparisonSamplesByKey.get(key);
+		const waypoint = routeWaypointAt(point);
+		const manualElevation = Number.isFinite(waypoint?.elevationM) ? Number(waypoint.elevationM) : null;
 		return loaded
 			? { ...loaded, name: point.name ?? loaded.name }
-			: { key, ...point, name: point.name ?? `分析点 ${index + 1}`, profile: null, terrainElevationM: null, error: routeWeatherError || null };
+			: { key, ...point, name: point.name ?? `分析点 ${index + 1}`, profile: null, terrainElevationM: manualElevation, terrainSource: manualElevation === null ? null : 'manual', error: routeWeatherError || null };
 	});
 	$: routeComparisonRows = buildRouteTargetSummaries(routeComparisonInputs, effectiveForecastTimestampMs ?? Number.NaN, Number(targetAltitudeM), unitSystem);
 	$: routeGroundFogByKey = new Map(routeComparisonInputs.map(sample => [sample.key, assessGroundFog(sample.profile, effectiveForecastTimestampMs ?? Number.NaN)]));
@@ -596,7 +613,7 @@
 	$: focusedRouteTargetAltitudeMsl = Number(targetAltitudeM);
 	$: focusedRouteNearestUsableLevel = nearestUsableProfileLevel(levelsIncludingModelSurface(focusedRouteFrame), focusedRouteTargetAltitudeMsl, focusedRouteTerrainM, 9_000);
 	$: focusedRouteTargetInPossibleCloud = focusedRouteHumidityBands.find(band => focusedRouteTargetAltitudeMsl !== null && focusedRouteTargetAltitudeMsl >= band.lowHeightM && focusedRouteTargetAltitudeMsl <= band.highHeightM) ?? null;
-	$: focusedRouteTerrainSource = Number.isFinite(focusedRouteSample?.terrainElevationM) ? 'Windy 地形接口' : '模式地形';
+	$: focusedRouteTerrainSource = focusedRouteSample?.terrainSource === 'manual' ? '手动校正海拔' : Number.isFinite(focusedRouteSample?.terrainElevationM) ? 'Windy 地形接口' : '模式地形';
 	$: focusedRouteLevels = levelsIncludingModelSurface(focusedRouteFrame).filter(level => level.heightM <= 9_000
 		&& (!Number.isFinite(focusedRouteTerrainM) || level.heightM >= focusedRouteTerrainM));
 	$: focusedRouteTrendMetrics = [
@@ -640,7 +657,13 @@
 		return `${point.lat.toFixed(7)},${point.lon.toFixed(7)}`;
 	}
 
+	function routeWaypointAt(point: { lat: number; lon: number }) {
+		const key = requestCoordinateKey(point);
+		return routePoints.find(waypoint => requestCoordinateKey(waypoint) === key) ?? null;
+	}
+
 	function routeWaypointTerrainLabel(point: RoutePoint) {
+		if (Number.isFinite(point.elevationM)) return `手动校正 ${formatHeight(point.elevationM, 0, unitSystem)}`;
 		const sample = terrainSamplesByCoordinate.get(requestCoordinateKey(point));
 		if (sample && Number.isFinite(sample.elevationM)) return `Windy 地形 ${formatHeight(sample.elevationM, 0, unitSystem)}`;
 		if (sample) return 'Windy 地形缺测';
@@ -828,15 +851,7 @@
 			selectPoint({ id: `map-${Date.now()}`, name: '地图选点', ...coordinate }, 'Windy 地图坐标，按原值使用');
 			return;
 		}
-		resetRouteWeather();
-		if (routePoints.length >= 2) {
-			const previous = routePoints.at(-1);
-			routePoints = [...routePoints.slice(0, -1), { ...previous, name: `转折点 ${routePoints.length - 1}` }];
-		}
-		cancelTerrain();
-		routePoints = normalizeRoutePointNames([...routePoints, { id: `route-${Date.now()}-${routePoints.length}`, name: '', nameSource: 'automatic', ...coordinate }]);
-		terrainSamples = [];
-		terrainError = '';
+		appendRoutePoint(coordinate);
 	}
 
 	function handleWaypointNameChange(pointId: string, event: Event) {
@@ -856,22 +871,48 @@
 
 	function appendFavoriteRoutePoint(event: CustomEvent) {
 		const place = event.detail;
+		appendRoutePoint(place);
+	}
+
+	function appendBuiltInRoutePoint(event: CustomEvent) {
+		appendRoutePoint(event.detail);
+	}
+
+	function appendRoutePoint(point: { name?: string; lat: number; lon: number; elevationM?: number }) {
 		resetRouteWeather();
-		if (routePoints.length >= 2) {
-			const previous = routePoints.at(-1);
-			routePoints = [...routePoints.slice(0, -1), { ...previous, name: `转折点 ${routePoints.length - 1}`, nameSource: 'automatic' }];
-		}
 		cancelTerrain();
+		routeCoordinateStatus = '';
+		routeCoordinateError = '';
+		const name = String(point.name ?? '').replace(/\s+/gu, ' ').trim().slice(0, 32);
+		const elevationM = Number.isFinite(point.elevationM) ? Number(point.elevationM) : undefined;
 		routePoints = normalizeRoutePointNames([...routePoints, {
-			id: `favorite-${Date.now()}-${routePoints.length}`,
-			name: place.name,
-			nameSource: 'custom',
-			lat: place.lat,
-			lon: place.lon,
+			id: `route-${Date.now()}-${routePoints.length}`,
+			name,
+			nameSource: name ? 'custom' : 'automatic',
+			lat: point.lat,
+			lon: point.lon,
+			...(elevationM === undefined ? {} : { elevationM }),
 		}]);
 		terrainSamples = [];
 		terrainError = '';
 		routeFavoriteStatus = '';
+	}
+
+	function appendManualRoutePoint() {
+		const resolved = resolveOviCoordinate(routeCoordinateText);
+		if (!resolved.ok) {
+			routeCoordinateError = resolved.error;
+			routeCoordinateStatus = '';
+			return;
+		}
+		const name = routePointNameText.trim();
+		appendRoutePoint({ name, lat: resolved.lat, lon: resolved.lon });
+		routeCoordinateText = '';
+		routePointNameText = '';
+		routeCoordinateError = '';
+		routeCoordinateStatus = name
+			? `已添加“${name}” · 经度 ${resolved.lon.toFixed(5)}°，纬度 ${resolved.lat.toFixed(5)}° WGS‑84`
+			: `已添加路线点，名称按路线顺序自动生成 · 经度 ${resolved.lon.toFixed(5)}°，纬度 ${resolved.lat.toFixed(5)}° WGS‑84`;
 	}
 
 	function useOviCoordinate() {
@@ -901,7 +942,7 @@
 	function selectPoint(point: RoutePoint, provenance: string) {
 		resetPointWeather();
 		selectedPoint = point;
-		manualPointElevationM = null;
+		manualPointElevationM = Number.isFinite(point.elevationM) ? Number(point.elevationM) : null;
 		manualPointElevationError = '';
 		coordinateProvenance = provenance;
 		coordinateError = '';
@@ -915,8 +956,12 @@
 
 	function handleFavoritePointSelect(event: CustomEvent) {
 		const place = event.detail;
-		selectPoint({ id: `favorite-${Date.now()}`, name: place.name, lat: place.lat, lon: place.lon }, '本机地点收藏');
-		manualPointElevationM = Number.isFinite(place.elevationM) ? place.elevationM : null;
+		selectPoint({ id: `favorite-${Date.now()}`, name: place.name, lat: place.lat, lon: place.lon, ...(Number.isFinite(place.elevationM) ? { elevationM: place.elevationM } : {}) }, '本机地点收藏');
+	}
+
+	function handleBuiltInPointSelect(event: CustomEvent) {
+		const place = event.detail;
+		selectPoint({ id: `builtin-${place.id}`, name: place.name, lat: place.lat, lon: place.lon, ...(Number.isFinite(place.elevationM) ? { elevationM: place.elevationM } : {}) }, '插件内置地点；奥维 GCJ‑02 坐标已转换为 Windy WGS‑84');
 	}
 
 	function handleManualPointElevation(event: Event) {
@@ -1564,7 +1609,7 @@
 		pointProfileSummaryCopyStatus = '';
 		pointProfileSummaryText = '';
 		pointProfile = null;
-		const needsElevation = pointElevationM === null;
+		const needsElevation = pointElevationM === null && !Number.isFinite(manualPointElevationM);
 		pointElevationLoading = needsElevation;
 		if (needsElevation) pointElevationError = '';
 		const forecastTask = loadWeatherProfile(point, model, 'detail', step, requestController.signal)
@@ -1656,6 +1701,8 @@
 			let profile: WeatherProfile | null = null;
 			let diagnosticProfile: WeatherProfile | null = null;
 			let terrainElevationM: number | null = null;
+			const latestWaypoint = routeWaypointAt(point);
+			const manualElevationM = Number.isFinite(latestWaypoint?.elevationM) ? latestWaypoint.elevationM : null;
 			let error = '';
 			try {
 				const parsed = await loadWeatherProfile(point, model, 'multiload', step, requestController.signal);
@@ -1671,15 +1718,16 @@
 				if (isWindyRateLimit(requestError)) routeRateLimited = true;
 			}
 			if (runId !== activeRouteWeatherRun) return null;
-			if (!routeRateLimited) {
+			if (manualElevationM !== null) terrainElevationM = manualElevationM;
+			else if (!routeRateLimited) {
 				try {
 					terrainElevationM = payloadNumber(await withWindyRequestLimit(signal => getElevation(point.lat, point.lon, { abortSignal: signal }), elevationRequestKey(point), requestController.signal));
 				} catch {
 					terrainElevationM = null;
 				}
 			}
-			const latestWaypoint = routePoints.find(waypoint => `${waypoint.lat.toFixed(5)},${waypoint.lon.toFixed(5)}` === key);
-			const sample: RouteWeatherSample = { key, ...point, name: latestWaypoint?.name ?? point.name, terrainElevationM, profile, diagnosticProfile, error: error || undefined };
+			const terrainSource = manualElevationM !== null ? 'manual' : Number.isFinite(terrainElevationM) ? 'windy' : null;
+			const sample: RouteWeatherSample = { key, ...point, name: latestWaypoint?.name ?? point.name, terrainElevationM, terrainSource, profile, diagnosticProfile, error: error || undefined };
 			routeWeatherSamples = [...routeWeatherSamples.filter(item => item.key !== key), sample].sort((a, b) => a.distanceM - b.distanceM);
 			routeWeatherTimesMs = commonRouteTimes(routeWeatherSamples);
 			routeWeatherProgress += 1;
@@ -1727,6 +1775,8 @@
 		routePoints = [];
 		terrainSamples = [];
 		terrainError = '';
+		routeCoordinateError = '';
+		routeCoordinateStatus = '';
 	}
 
 	async function loadRouteTerrain() {
@@ -1746,6 +1796,11 @@
 			const elevations = await mapWithConcurrency(batch, 3, async point => {
 				if (runId !== activeTerrainRun) return null;
 				const key = `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`;
+				const waypoint = routeWaypointAt(point);
+				if (Number.isFinite(waypoint?.elevationM)) {
+					terrainProgress += 1;
+					return { ...point, elevationM: waypoint.elevationM, elevationSource: 'manual' as const };
+				}
 				try {
 					let elevationM = elevationCache.get(key);
 					if (elevationM === undefined) {
@@ -1754,10 +1809,10 @@
 					}
 					if (runId !== activeTerrainRun) return null;
 					terrainProgress += 1;
-					return { ...point, elevationM };
+					return { ...point, elevationM, elevationSource: Number.isFinite(elevationM) ? 'windy' as const : null };
 				} catch {
 					if (runId === activeTerrainRun) terrainProgress += 1;
-					return { ...point, elevationM: null };
+					return { ...point, elevationM: null, elevationSource: null };
 				}
 			}, () => runId !== activeTerrainRun);
 			if (runId !== activeTerrainRun) return;
@@ -1906,6 +1961,9 @@
 	.coordinate-format-note { margin: 0 0 6px; color: var(--profile-muted); font-size: 15px; line-height: 1.55; text-wrap: pretty; }
 	.coordinate-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-bottom: 9px; }
 	.ovi-coordinate-entry { grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; }
+	.route-coordinate-entry { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto; margin-top: 10px; }
+	.route-coordinate-entry label { min-width: 0; }
+	.route-coordinate-note { margin-top: -3px; }
 	.coordinate-entry label { display: flex; min-width: 0; flex-direction: column; gap: 5px; color: var(--profile-muted); font-size: 14px; }
 	.coordinate-entry input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--profile-line); border-radius: 7px; padding: 0 9px; background: #fff; color: var(--profile-ink); font: 14px "Fira Code", Consolas, monospace; }
 	.coordinate-import .point-error { display: block; margin-top: 6px; }
@@ -2227,8 +2285,10 @@
 	.route-comparison-card > p.cloud-assessment { margin: 9px 0 0; border-left: 3px solid currentColor; padding: 6px 9px; background: #131a2b; font-size: 14px; line-height: 1.5; }
 	.wind-arrow-key { position: relative; display: inline-block; width: 24px; height: 2px; background: var(--wx-series-wind); }
 	.wind-arrow-key::after { position: absolute; top: -4px; right: -1px; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--wx-series-wind); content: ''; }
-	.precipitation-key-total, .precipitation-total-bar { fill: var(--wx-rain); }
-	.precipitation-key-snow, .precipitation-snow-bar { fill: var(--wx-snow); }
+	.precipitation-key-total { background-color: var(--wx-rain); }
+	.precipitation-total-bar { fill: var(--wx-rain); }
+	.precipitation-key-snow { background-color: var(--wx-snow); }
+	.precipitation-snow-bar { fill: var(--wx-snow); }
 	.precipitation-key-total, .precipitation-key-snow { width: 16px !important; height: 10px !important; }
 	.precipitation-section { margin-top: 16px; border: 1px solid #29324b; padding: 12px 14px; background: #0a0d1b; }
 	.precipitation-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: #eff3fa; }
@@ -2455,6 +2515,8 @@
 		.segmented.compact button { min-height: 44px; padding: 0 8px; }
 		.plugin-shell .section-copy,
 		.plugin-shell .coordinate-format-note { font-size: 15px; line-height: 1.55; }
+		.route-coordinate-entry { grid-template-columns: minmax(0, 1fr); }
+		.route-coordinate-entry .small-button { width: 100%; }
 		.time-stepper button { min-height: 44px; }
 		.text-button { min-height: 44px; }
 		.primary-button, .secondary-button, .small-button { min-height: 44px; }

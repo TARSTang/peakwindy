@@ -1083,7 +1083,9 @@ export function assessCloudAtHeight(result, bands, targetHeightM, directCloudBas
 
 export function buildRouteTargetSummaries(samples, timestampMs, targetAltitudeM, unitSystem = 'metric') {
 	return (samples ?? []).map((sample, index) => {
-		const terrain = resolveTerrainElevation(sample?.terrainElevationM ?? null, sample?.profile?.modelElevationM ?? null);
+		const terrain = sample?.terrainSource === 'manual' && Number.isFinite(sample?.terrainElevationM)
+			? { heightM: sample.terrainElevationM, source: 'manual' }
+			: resolveTerrainElevation(sample?.terrainElevationM ?? null, sample?.profile?.modelElevationM ?? null);
 		const frame = frameAtTimestamp(sample?.profile?.frames, timestampMs);
 		const targetMslM = Number.isFinite(targetAltitudeM) && targetAltitudeM >= 0 ? targetAltitudeM : null;
 		const weather = frame
@@ -1503,7 +1505,7 @@ export function buildCrossSectionGeometry(samples, timestampMs, variable = 'clou
 		const columnWidth = estimatedCoverage ? Math.max(0, sampleRight - sampleLeft)
 			: Math.max(1, Math.min(plot.right, centers[sampleIndex] + weatherColumnWidth / 2) - columnX);
 		const frame = frameAtTimestamp(sample.profile?.frames, timestampMs);
-		const terrainSource = Number.isFinite(sample.terrainElevationM) ? 'Windy 地形接口' : Number.isFinite(sample.profile?.modelElevationM) ? '模式地形' : null;
+		const terrainSource = sample.terrainSource === 'manual' && Number.isFinite(sample.terrainElevationM) ? '手动校正海拔' : Number.isFinite(sample.terrainElevationM) ? 'Windy 地形接口' : Number.isFinite(sample.profile?.modelElevationM) ? '模式地形' : null;
 		const terrain = Number.isFinite(sample.terrainElevationM) ? sample.terrainElevationM : Number.isFinite(sample.profile?.modelElevationM) ? sample.profile.modelElevationM : null;
 		const eligible = levelsIncludingModelSurface(frame).filter(level => level.heightM <= maxHeightM
 			&& (!Number.isFinite(terrain) || level.heightM >= terrain)) ?? [];
