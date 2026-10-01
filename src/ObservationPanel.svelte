@@ -3,6 +3,7 @@
 	import { resolveOviCoordinate } from './lib/coordinates.js';
 	import { createObservationRunner } from './lib/observation-runner.js';
 	import ObservationEvidence from './ObservationEvidence.svelte';
+	import FavoritePlaces from './FavoritePlaces.svelte';
 	import { formatForecastTime } from './lib/profile.js';
 	export let model = 'ecmwf';
 	export let active = true;
@@ -46,10 +47,18 @@
 			: s === 'clear'
 				? '条件较有利'
 				: '资料不足';
-	const combined = (terrain, cloud) =>
-		terrain === 'blocked' || cloud === 'blocked'
+	const fogStatus = (s) =>
+		s === 'blocked'
+			? '存在低能见度信号'
+			: s === 'possible'
+				? '有雾／视程风险'
+				: s === 'clear'
+					? '采样点未见明显雾信号'
+					: '资料不足';
+	const combined = (terrain, cloud, fog) =>
+		terrain === 'blocked' || cloud === 'blocked' || fog === 'blocked'
 			? 'blocked'
-			: terrain === 'clear' && cloud === 'clear'
+			: terrain === 'clear' && cloud === 'clear' && fog === 'clear'
 				? 'clear'
 				: 'unknown';
 	const number = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : '缺测');
@@ -57,7 +66,6 @@
 		({
 			terrain: '地形通视',
 			weather: '视线天气',
-			solar: '太阳光路',
 			complete: '已完成',
 			cancelled: '已取消',
 			'rate-limited': '限流',
@@ -149,7 +157,7 @@
 			timestampMs: Date.parse(`${date}T${time}:00+08:00`),
 		};
 	}
-	async function analyze(window = null) {
+	async function analyze() {
 		if (!camera || !peak) {
 			error = '先设置机位和山峰';
 			return;
@@ -174,9 +182,7 @@
 		busy = true;
 		error = '';
 		show();
-		const completed = window
-			? await runner.analyzeSolar(c, result, window)
-			: await runner.analyze(c);
+		const completed = await runner.analyze(c);
 		if (own !== revision) return;
 		result = completed;
 		busy = false;
@@ -184,6 +190,22 @@
 	}
 	function choose(s) {
 		selectedSector = s.id;
+		redraw();
+	}
+	function selectFavorite(event) {
+		const place = event.detail;
+		invalidate();
+		const point = { lat: place.lat, lon: place.lon, source: 'favorite' };
+		if (picking === 'camera') {
+			camera = point;
+			cameraName = place.name;
+			cameraActual = Number.isFinite(place.elevationM) ? String(place.elevationM) : '';
+			picking = 'peak';
+		} else {
+			peak = point;
+			peakName = place.name;
+			peakActual = Number.isFinite(place.elevationM) ? String(place.elevationM) : '';
+		}
 		redraw();
 	}
 	function locate(p) {
@@ -238,6 +260,18 @@
 		}
 	}
 	$: selected = result?.sectors?.find((s) => s.id === selectedSector);
+	$: favoritePoint = picking === 'camera' ? camera : peak;
+	$: favoriteCurrentPlace = favoritePoint
+		? {
+				name: picking === 'camera' ? cameraName : peakName,
+				lat: favoritePoint.lat,
+				lon: favoritePoint.lon,
+				elevationM: (picking === 'camera' ? cameraActual : peakActual) !== ''
+					&& Number.isFinite(Number(picking === 'camera' ? cameraActual : peakActual))
+					? Number(picking === 'camera' ? cameraActual : peakActual)
+					: null,
+			}
+		: null;
 	$: weatherPoints = selected
 		? selected.weatherPoint
 			? [
@@ -258,8 +292,9 @@
 {#if active}
 	<div class="setup">
 		<p class="eyebrow">机位 → 山体 · 北京时间</p>
-		<h2>观山与日照金山</h2>
-		<p>设置两个点，检查直达视线、山体分区与早晚受光条件。</p>
+		<h2>机位观山</h2>
+		<p>设置机位和山峰，检查直达视线、山体分区、视线云层与地面雾／能见度信号。</p>
+		<small>日照金山请结合太阳方向、现场积雪和天气自行判断；插件不计算受光条件。</small>
 		{#each ['camera', 'peak'] as which}
 			<fieldset>
 				<legend>{which === 'camera' ? '① 机位' : '② 山峰'}</legend>
@@ -313,6 +348,13 @@
 				>
 			</fieldset>
 		{/each}
+		<div class="favorite-target">
+			<label>收藏点填入<select bind:value={picking} aria-label="选择收藏地点要填入机位还是山峰">
+				<option value="camera">机位</option>
+				<option value="peak">山峰</option>
+			</select></label>
+		</div>
+		<FavoritePlaces currentPlace={favoriteCurrentPlace} selectLabel={picking === 'camera' ? '设为机位' : '设为山峰'} on:select={selectFavorite} />
 		<div class="pair">
 			<label
 				>视点离地（米）<input
@@ -397,7 +439,7 @@
 					<article>
 						<small>能否观山 · 机位到峰顶</small>
 						<h3>
-							{status(combined(result.sight?.status, result.cloud?.status))}
+							{status(combined(result.sight?.status, result.cloud?.status, result.fog?.status))}
 						</h3>
 						<p>地形：{result.sight?.reason ?? '待检查'}</p>
 						<p>
@@ -424,6 +466,13 @@
 								on:click={() => locate(result.cloud.obstruction)}
 								>定位云层信号</button
 							>{/if}
+					</article>
+					<article class="fog-verdict">
+						<small>雾与近地面能见度 · {textTime(result.config.timestampMs)}</small>
+						<h3>{fogStatus(result.fog?.status)}</h3>
+						<p>{result.fog?.reason ?? '等待 Windy 近地面能见度数据。'}</p>
+						<small>水平能见度和起雾条件只作近地面信号；雾现象码关联三小时时段，不能替代整条高空视线透明度。</small>
+						{#if result.fog?.obstruction}<button on:click={() => locate(result.fog.obstruction)}>定位雾／低能见度信号</button>{/if}
 					</article>
 				</div>
 				<h3>山体分区 <small>最多九个代表区域，不表示精确可见面积</small></h3>
@@ -477,53 +526,14 @@
 										(l) =>
 											`${number(l.heightM)} m ${l.relation === 'above' ? '在线上方' : l.relation === 'below' ? '在线下方' : '与视线相交'}`,
 									)
-									.join('；') ?? '缺测'}</small
+									.join('；') ?? '缺测'}</small><br /><small>雾／地面能见度：{p.fog?.reason ?? '未完成'}</small
 							>
 						</p>{/each}
 				</details>
-				<h3>能否遇到日照金山 · 早晚低角度受光窗口</h3>
-				<p>
-					{result.solarPaths.some((p) => p.status === 'blocked')
-						? '存在遮挡信号，详见对应分区与时刻'
-						: result.windows.length
-							? '可见山面有候选受光窗口；太阳光路与实际雪面仍需检查'
-							: '资料不足或当天未找到可见坡面的低角度窗口'}。按分钟计算太阳位置；窗口内天气保留真实
-					1／3 小时时次。点击窗口补查开始、中间、结束的太阳光路。
-				</p>
-				<div class="windows">
-					{#each result.windows as w}<button
-							disabled={busy}
-							on:click={() => analyze(w)}
-							><strong
-								>{w.kind === 'morning' ? '早晨' : '傍晚'}
-								{textTime(w.startMs)} — {textTime(w.endMs)}</strong
-							><span>{w.reason}</span></button
-						>{:else}<p>
-							尚未找到符合条件的可见坡面窗口；可能缺少地形、坡面背光或当天没有低角度时段。
-						</p>{/each}
-				</div>
-				{#each result.solarPaths as p}<details>
-						<summary
-							>{textTime(p.timestampMs)} · 分区 {p.sectorId + 1} · 太阳方位 {number(
-								p.sun.azimuthDeg,
-								1,
-							)}° · {status(p.status)}</summary
-						>
-						<p>
-							{p.reason ?? '读取中'}；几何太阳高度 {number(
-								p.sun.geometricAltitudeDeg,
-								2,
-							)}°，视高度 {number(p.sun.apparentAltitudeDeg, 2)}°
-						</p>
-						{#each p.weatherPoints as v}<p>
-								{number(v.distanceM / 1000, 1)} km · 光路 {number(v.rayM)} m · {v
-									.cloud?.reason ?? '未完成'}
-							</p>{/each}
-					</details>{/each}
 				<aside>
 					未知：{result.unknowns.join(
 						'；',
-					)}。受光条件满足仅表示可见山面具有低角度受光条件，积雪与金色效果尚未确认。
+					)}。日照金山和雪面颜色请结合太阳方向、现场积雪与天气自行判断；插件只提供地形和视线云层参考。
 				</aside>
 			{:else}<p role="status">正在准备分析…</p>{/if}
 		</div>
@@ -596,6 +606,9 @@
 		flex: 1;
 		min-width: 0;
 	}
+	.favorite-target { margin: 8px 0; }
+	.favorite-target label { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 8px; color: #52676a; }
+	.favorite-target select { min-height: 44px; border: 1px solid #cbd9d7; border-radius: 6px; padding: 0 9px; background: #fff; color: #20333a; font: inherit; }
 	label {
 		display: block;
 		font-size: 12px;
@@ -640,6 +653,7 @@
 		padding: 18px;
 		border-left: 4px solid #91c9ba;
 	}
+	.verdicts .fog-verdict { grid-column: 1 / -1; border-left-color: #eeb66d; }
 	.verdicts h3 {
 		font-size: 24px;
 		margin: 6px 0;
@@ -653,16 +667,14 @@
 		grid-template-columns: repeat(3, 1fr);
 		gap: 8px;
 	}
-	.sectors button,
-	.windows button {
+	.sectors button {
 		background: #172736;
 		color: #d8e8ee;
 		text-align: left;
 		border-color: #39535f;
 	}
 	.sectors span,
-	.sectors small,
-	.windows span {
+	.sectors small {
 		display: block;
 		margin-top: 6px;
 	}
@@ -677,15 +689,6 @@
 	}
 	.green {
 		color: #9cda79;
-	}
-	.windows {
-		display: flex;
-		gap: 12px;
-		flex-wrap: wrap;
-	}
-	.windows button {
-		flex: 1;
-		min-width: 250px;
 	}
 	details {
 		border-top: 1px solid #344754;

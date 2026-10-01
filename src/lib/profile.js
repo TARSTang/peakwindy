@@ -28,7 +28,7 @@ function responseArrayDiagnostics(source, includeLegacyFields = false) {
 	return Object.entries(source)
 		.filter(([key, values]) => Array.isArray(values) && (
 			/^(?:ts|hours)$/i.test(key)
-		|| /^(?:gh|cloud|cloudBase|temp|wind|windDir|rh|dewPoint|windGust|gust|visibility|temperature|feelTemperature|pressure|lclouds|mclouds|hclouds|precipAmount|precipSnowAmount)(?:-(?:\d+h|surface))?$/i.test(key)
+		|| /^(?:gh|cloud|cloudBase|temp|wind|windDir|rh|dewPoint|windGust|gust|visibility|weatherWarnings|temperature|feelTemperature|pressure|lclouds|mclouds|hclouds|precipAmount|precipSnowAmount)(?:-(?:\d+h|surface))?$/i.test(key)
 		|| (includeLegacyFields && /^(?:dewpoint|wind_u|wind_v)(?:-(?:\d+h|surface))?$/i.test(key))
 		))
 		.map(([key, values]) => ({
@@ -225,7 +225,11 @@ export function parseWindyProfile(payload) {
 			timeAlignmentNotice,
 			cloudBaseM,
 			surfaceLevel: surfaceLevel && ['temperatureC', 'dewPointC', 'relativeHumidityPct', 'windSpeedMs', 'windDirectionDeg', 'cloudPct'].some(field => Number.isFinite(surfaceLevel[field])) ? surfaceLevel : null,
-			surfaceVisibilityM: atSourceTime('data', data, 'visibility', { min: 0, max: 200_000 }),
+			surfaceVisibilityM: atSourceTime('data', data, 'visibility', { min: 0, max: 200_000 })
+				?? atSourceTime('data', data, 'visibility-surface', { min: 0, max: 200_000 }),
+			surfaceWeatherWarningCode: atSourceTime('data', data, 'weatherWarnings', { min: 0, max: 200 })
+				?? atSourceTime('data', data, 'weatherwarnings', { min: 0, max: 200 })
+				?? atSourceTime('data', data, 'weatherwarnings-surface', { min: 0, max: 200 }),
 			surfaceWindGustMs: atSourceTime('data', data, 'windGust', { min: 0, max: 150 }),
 			lowCloudPct: atSourceTime('data', data, 'lclouds', { min: 0, max: 100 }),
 			mediumCloudPct: atSourceTime('data', data, 'mclouds', { min: 0, max: 100 }),
@@ -409,7 +413,10 @@ export function parseWindyLegacyProfile(payload, requestedModel = null) {
 			timestampMs: timestampsMs[timeIndex],
 			cloudBaseM: legacyValueAt('cloudBase', timeIndex, { min: -500, max: 20_000 }),
 			surfaceLevel: surfaceLevel && ['temperatureC', 'dewPointC', 'relativeHumidityPct', 'windSpeedMs', 'cloudPct'].some(field => Number.isFinite(surfaceLevel[field])) ? surfaceLevel : null,
-			surfaceVisibilityM: legacyValueAt('visibility', timeIndex, { min: 0, max: 200_000 }),
+			surfaceVisibilityM: legacyValueAt('visibility', timeIndex, { min: 0, max: 200_000 })
+				?? legacyValueAt('visibility-surface', timeIndex, { min: 0, max: 200_000 }),
+			surfaceWeatherWarningCode: legacyValueAt('weatherwarnings', timeIndex, { min: 0, max: 200 })
+				?? legacyValueAt('weatherwarnings-surface', timeIndex, { min: 0, max: 200 }),
 			surfaceWindGustMs: legacyValueAt('windGust', timeIndex, { min: 0, max: 150 }),
 			lowCloudPct: legacyValueAt('lclouds', timeIndex, { min: 0, max: 100 }),
 			mediumCloudPct: legacyValueAt('mclouds', timeIndex, { min: 0, max: 100 }),
@@ -1164,7 +1171,10 @@ export function buildAltitudeTrend(levels, field, terrainElevationM = null, maxH
 		domainMax = allValues.length
 			? Math.max(5, Math.ceil(Math.max(0, ...allValues.map(level => level[field])) / 5) * 5)
 			: 50;
-	} else if ((field === 'relativeHumidityPct' || field === 'cloudPct') && allValues.length) {
+	} else if (field === 'relativeHumidityPct') {
+		// Relative humidity has a fixed physical range; keep it comparable across locations and times.
+		domainMax = 100;
+	} else if (field === 'cloudPct' && allValues.length) {
 		domainMax = Math.max(10, Math.min(100, Math.ceil(Math.max(...allValues.map(level => level[field])) / 10) * 10));
 	}
 	const x = altitudeM => plot.left + altitudeM / maxHeightM * (plot.right - plot.left);

@@ -10,12 +10,6 @@ import {
 	bearing,
 } from '../src/lib/observation-geometry.js';
 import { cloudAtRay, timeBracket } from '../src/lib/observation-weather.js';
-import {
-	solarPosition,
-	solarWindows,
-	solarRayHeight,
-	beijingDayStart,
-} from '../src/lib/observation-solar.js';
 import { createObservationRunner } from '../src/lib/observation-runner.js';
 
 const camera = { lat: 30, lon: 102 },
@@ -122,72 +116,6 @@ test('cloud below, above, and intersection are distinguishable in evidence', () 
 	);
 	assert.ok(
 		cloudAtRay(p, 1, 1000).relations.some((v) => v.relation === 'intersects'),
-	);
-});
-test('SunCalc v2 against NREL SPA worked example: north-clockwise degrees and apparent elevation', () => {
-	// NREL/TP-560-34302: 2003-10-17 12:30:30 MST, 39.742476/-105.1786.
-	const sun = solarPosition(Date.parse('2003-10-17T19:30:30Z'), {
-		lat: 39.742476,
-		lon: -105.1786,
-	});
-	assert.ok(Math.abs(sun.azimuthDeg - 194.340241) < 0.1);
-	assert.ok(Math.abs(sun.apparentAltitudeDeg - (90 - 50.111622)) < 0.1);
-	assert.ok(sun.apparentAltitudeDeg > sun.geometricAltitudeDeg);
-});
-test('Beijing dates use explicit UTC offsets; solar rays include curvature', () => {
-	assert.equal(
-		new Date(beijingDayStart('2026-09-30')).toISOString(),
-		'2026-09-29T16:00:00.000Z',
-	);
-	assert.ok(solarRayHeight(6000, 250000, 0) > 6000);
-});
-test('near-horizon solar angles distinguish geometric from apparent and sunrise is east', () => {
-	const p = { lat: 0, lon: 0 };
-	const start = Date.parse('2026-03-20T06:00:00Z');
-	const positions = Array.from({ length: 30 }, (_, i) =>
-		solarPosition(start + i * 60000, p),
-	);
-	const near = positions.find((p) => Math.abs(p.geometricAltitudeDeg) < 0.2);
-	assert.ok(near);
-	assert.ok(near.apparentAltitudeDeg - near.geometricAltitudeDeg > 0.4);
-	assert.ok(Math.abs(near.azimuthDeg - 90) < 1);
-	const evening = solarPosition(Date.parse('2026-03-20T18:10:00Z'), p);
-	assert.ok(Math.abs(evening.azimuthDeg - 270) < 1);
-});
-test('sun-facing visible patch gives morning and evening windows; backlighting excluded', () => {
-	const p = { lat: 30, lon: 102, elevationM: 6000 };
-	const visible = [
-		{
-			id: 1,
-			status: 'clear',
-			facing: true,
-			normal: [0, 0, 1],
-			sight: { status: 'clear' },
-		},
-	];
-	const w = solarWindows('2026-09-30', p, visible);
-	assert.ok(w.some((v) => v.kind === 'morning'));
-	assert.ok(w.some((v) => v.kind === 'evening'));
-	assert.ok(
-		w.every(
-			(v) =>
-				v.startMs >= beijingDayStart('2026-09-30') &&
-				v.endMs < beijingDayStart('2026-10-01'),
-		),
-	);
-	const backlit = solarWindows('2026-09-30', p, [
-		{ ...visible[0], normal: [-1, 0, 0.01] },
-	]);
-	assert.ok(backlit.every((w) => w.kind === 'evening'));
-	assert.equal(
-		solarWindows('2026-06-21', { lat: 89, lon: 0, elevationM: 0 }, visible)
-			.length,
-		0,
-	);
-	assert.equal(
-		solarWindows('2026-12-21', { lat: 89, lon: 0, elevationM: 0 }, visible)
-			.length,
-		0,
 	);
 });
 test('runner peak correction affects only summit, unavailable weather remains unknown', async () => {

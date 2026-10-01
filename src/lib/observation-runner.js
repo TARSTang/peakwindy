@@ -8,11 +8,8 @@ import {
 	bearing,
 	EARTH_RADIUS_M,
 	deg,
-	dot,
-	rad,
 } from './observation-geometry.js';
-import { cloudAtRay, summarizeCloud } from './observation-weather.js';
-import { solarWindows, solarPath } from './observation-solar.js';
+import { cloudAtRay, fogAtGround, summarizeCloud, summarizeFog } from './observation-weather.js';
 
 export function createObservationRunner({
 	elevation,
@@ -25,34 +22,31 @@ export function createObservationRunner({
 		generation++;
 		controller?.abort();
 	};
-	async function run(config, previous, solarWindow) {
+	async function run(config) {
 		cancel();
 		const id = generation;
 		controller = new AbortController();
 		const signal = controller.signal;
-		const result = solarWindow
-			? { ...structuredClone(previous), solarPaths: [] }
-			: {
-					config: structuredClone(config),
-					stage: 'terrain',
-					grid: [],
-					sectors: [],
-					weatherPoints: [],
-					windows: [],
-					solarPaths: [],
-					unknowns: [
-						'雪面覆盖与金色效果未确认',
-						'实际透明度未知',
-						'采样点之间的地形与天气未知',
-					],
-				};
+		const result = {
+			config: structuredClone(config),
+			stage: 'terrain',
+			grid: [],
+			sectors: [],
+			weatherPoints: [],
+			unknowns: ['实际透明度未知', '采样点之间的地形与天气未知'],
+		};
 		let completed = 0,
 			total = 0,
 			rateLimited = false;
-		const publish = () => {
-			if (result.weatherPoints?.length)
-				result.cloud = summarizeCloud(result.weatherPoints);
-			if (id === generation && !signal.aborted)
+	const publish = () => {
+		if (result.weatherPoints?.length)
+			result.cloud = summarizeCloud(result.weatherPoints);
+		const fogPoints = [
+			...(result.weatherPoints ?? []),
+			...(result.sectors ?? []).map((sector) => sector.weatherPoint).filter(Boolean),
+		];
+		if (fogPoints.length) result.fog = summarizeFog(fogPoints);
+		if (id === generation && !signal.aborted)
 				onProgress({ ...result, completed, total });
 		};
 		const checkpoint = () => {
@@ -96,18 +90,24 @@ export function createObservationRunner({
 					p.rayM,
 					p.elevationM,
 				);
+				p.fog = fogAtGround(
+					p.profile,
+					p.timestampMs ?? config.timestampMs,
+					p.remainingDistanceM,
+				);
 			} catch (e) {
 				if (e.name === 'AbortError') throw e;
 				if (isWindyRateLimit(e)) rateLimited = true;
 				p.error = rateLimited ? 'Windy 限流' : '天气读取失败';
 				p.cloud = { status: 'unknown', reason: p.error };
+				p.fog = { status: 'unknown', reason: `雾／能见度资料不足：${p.error}` };
 			}
 			completed++;
 			publish();
 			return p;
 		};
 		try {
-			if (!solarWindow) {
+			{
 				const camera = { ...config.camera },
 					peak = { ...config.peak };
 				const main = directPath(camera, peak);
@@ -208,6 +208,7 @@ export function createObservationRunner({
 				result.stage = 'weather';
 				result.weatherPoints = directPath(camera, peak, 5000, 41).map((p) => ({
 					...p,
+					remainingDistanceM: Math.max(0, result.distanceM - p.distanceM),
 					rayM:
 						Number.isFinite(viewerM) && Number.isFinite(peak.elevationM)
 							? rayHeight(
@@ -224,6 +225,8 @@ export function createObservationRunner({
 					if (!sector.representative) continue;
 					sector.weatherPoint = {
 						...sector.representative,
+						distanceM: sector.sight?.path?.at(-1)?.distanceM ?? null,
+						remainingDistanceM: 0,
 						rayM: sector.representative.elevationM,
 					};
 					await batch([sector.weatherPoint], readWeather);
@@ -240,86 +243,6 @@ export function createObservationRunner({
 						'主路径天气与分区代表点；分区侧向路径未独立密集采样';
 				}
 				result.cloud = summarizeCloud(result.weatherPoints);
-				result.windows = solarWindows(
-					config.date,
-					peak,
-					result.sectors.filter((s) => s.status === 'clear'),
-					result.grid,
-				);
-			} else {
-				result.stage = 'solar';
-				const times = [
-					solarWindow.startMs,
-					Math.round((solarWindow.startMs + solarWindow.endMs) / 2),
-					solarWindow.endMs,
-				];
-				for (const timestampMs of [...new Set(times)])
-					for (const sectorId of solarWindow.sectorIds) {
-						const sector = result.sectors.find((s) => s.id === sectorId);
-						if (!sector?.representative) continue;
-						const path = solarPath(sector.representative, timestampMs);
-						const sun = path.sun;
-						const sunVector = [
-							Math.sin(rad(sun.azimuthDeg)) *
-								Math.cos(rad(sun.geometricAltitudeDeg)),
-							Math.cos(rad(sun.azimuthDeg)) *
-								Math.cos(rad(sun.geometricAltitudeDeg)),
-							Math.sin(rad(sun.geometricAltitudeDeg)),
-						];
-						const evidence = {
-							sectorId,
-							timestampMs,
-							...path,
-							weatherPoints: [],
-							status: 'unknown',
-							sunFacing: sector.normal
-								? dot(sector.normal, sunVector) > 0
-								: null,
-						};
-						result.solarPaths = [...result.solarPaths, evidence];
-						await batch(evidence.points, readElevation);
-						evidence.terrainBlocked = evidence.points
-							.slice(1)
-							.some(
-								(p) =>
-									Number.isFinite(p.elevationM) && p.elevationM > p.rayM + 30,
-							);
-						const weatherDistances = [
-							0, 1000, 5000, 12000, 30000, 65000, 125000, 175000, 250000,
-						];
-						evidence.weatherPoints = weatherDistances.map((d) => ({
-							...evidence.points.find((p) => p.distanceM === d),
-							timestampMs,
-						}));
-						await batch(evidence.weatherPoints, readWeather);
-						evidence.cloud = summarizeCloud(evidence.weatherPoints);
-						evidence.status =
-							evidence.sunFacing === false ||
-							evidence.terrainBlocked ||
-							evidence.cloud.status === 'blocked'
-								? 'blocked'
-								: 'unknown';
-						evidence.reason =
-							evidence.sunFacing === false
-								? '该代表时刻坡面背向太阳'
-								: evidence.terrainBlocked
-									? '太阳方向采样山脊高于光路'
-									: evidence.cloud.status === 'blocked'
-										? evidence.cloud.obstruction.cloud.reason
-										: '可见山面具备低角度受光条件；250 km 以外、点间地形、未返回高空层和方向覆盖仍未知';
-						publish();
-					}
-				result.windows = result.windows.map((w) =>
-					w.id === solarWindow.id
-						? {
-								...w,
-								status: result.solarPaths.some((p) => p.status === 'blocked')
-									? 'blocked'
-									: 'unknown',
-								reason: '已检查开始／中间／结束方向；具体证据见光路列表',
-							}
-						: w,
-				);
 			}
 			result.stage = 'complete';
 			publish();
@@ -344,6 +267,5 @@ export function createObservationRunner({
 	return {
 		cancel,
 		analyze: (config) => run(config),
-		analyzeSolar: (config, previous, window) => run(config, previous, window),
 	};
 }

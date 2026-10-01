@@ -5,7 +5,7 @@ const config: ExternalPluginConfig = {
 	version: '0.2.0',
 	title: '高海拔天气剖面\u200B',
 	icon: '▲',
-	description: '分析机位到山体的通视、云层与早晚受光条件。',
+	description: '分析机位到山体的通视、视线云层与地面雾／能见度。',
 	author: 'TARSTang',
 	desktopUI: 'rhpane',
 	desktopWidth: 430,
