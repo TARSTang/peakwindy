@@ -57,7 +57,7 @@
 			/>
 			<BuiltInPlaces selectLabel="使用此地点" on:select={handleBuiltInPointSelect} />
 			{#if selectedPoint}
-			<div class="coordinate-card">
+			<div class="coordinate-card" bind:this={pointResultElement}>
 				<div><span class="tiny-label">分析地点</span><strong>{selectedPoint.name}</strong></div>
 				<div class="coord-value">{selectedPoint.lat.toFixed(4)}° · {selectedPoint.lon.toFixed(4)}°</div>
 				<div class="coordinate-provenance">{coordinateProvenance}</div>
@@ -424,6 +424,7 @@
 	let forecastContextReady = false;
 	let selectionMode: 'point' | 'route' = 'point';
 	let selectedPoint: RoutePoint | null = null;
+	let pointResultElement: HTMLDivElement | null = null;
 	let manualCoordinateText = '';
 	let routeCoordinateText = '';
 	let routePointNameText = '';
@@ -954,14 +955,24 @@
 		if (forecastContextReady) void loadPointProfile();
 	}
 
-	function handleFavoritePointSelect(event: CustomEvent) {
+	async function handleFavoritePointSelect(event: CustomEvent) {
 		const place = event.detail;
 		selectPoint({ id: `favorite-${Date.now()}`, name: place.name, lat: place.lat, lon: place.lon, ...(Number.isFinite(place.elevationM) ? { elevationM: place.elevationM } : {}) }, '本机地点收藏');
+		await scrollToPointResult();
 	}
 
-	function handleBuiltInPointSelect(event: CustomEvent) {
+	async function handleBuiltInPointSelect(event: CustomEvent) {
 		const place = event.detail;
 		selectPoint({ id: `builtin-${place.id}`, name: place.name, lat: place.lat, lon: place.lon, ...(Number.isFinite(place.elevationM) ? { elevationM: place.elevationM } : {}) }, '插件内置地点；奥维 GCJ‑02 坐标已转换为 Windy WGS‑84');
+		await scrollToPointResult();
+	}
+
+	async function scrollToPointResult() {
+		await tick();
+		pointResultElement?.scrollIntoView({
+			behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+			block: 'start',
+		});
 	}
 
 	function handleManualPointElevation(event: Event) {
@@ -1947,7 +1958,7 @@
 	.divider { height: 1px; margin: 21px 0 0; background: var(--profile-line); }
 	.route-heading { align-items: center; }
 	.segmented.compact button { min-height: 31px; padding: 0 10px; }
-	.coordinate-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px 12px; border: 1px solid var(--profile-line); border-radius: 9px; padding: 12px; background: #f8faf8; }
+	.coordinate-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px 12px; border: 1px solid var(--profile-line); border-radius: 9px; padding: 12px; background: #f8faf8; scroll-margin-block-start: 12px; }
 	.coordinate-card > div:first-child { display: flex; flex-direction: column; gap: 4px; }
 	.tiny-label { color: var(--profile-muted); font-size: 11px; }
 	.coordinate-card strong { font-size: 16px; }
