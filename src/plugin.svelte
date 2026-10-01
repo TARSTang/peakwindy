@@ -79,11 +79,18 @@
 				{#if pointProfile?.ok}
 					{#if activePointFrame}
 				<div class="point-summary-card">
-					<div class="point-summary-copy"><strong>{formatForecastTime(effectiveForecastTimestampMs ?? Date.now())} · 请求 {selectedModel.toUpperCase()}</strong><span>{pointTerrainM === null ? '地形高度未知' : `${pointTerrainSource} ${formatHeight(pointTerrainM, 0, unitSystem)} 海拔`} · 垂直层 {pointGroundLevels.length} 层{activePointFrame.surfaceLevel ? ' · 近地面温度或风可用' : ''}</span><span>目标 {formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}：{targetHeightResult?.ok ? `${formatTemperature(targetHeightResult.temperatureC, 1, unitSystem)} · 湿度 ${formatValue(targetHeightResult.humidityPct, 0, '%')} · 风 ${formatWind(targetHeightResult.windSpeedMs, 1, unitSystem)}` : targetHeightResult?.reason === 'below-terrain' ? '低于地形' : '暂无包围该高度的有效层'}</span><span>0°C 温度层估算：{freezingLevelText(pointFreezingLevels)}</span>{#if pointGroundFog}<span>地面雾／能见度：{groundFogStatusLabel(pointGroundFog.status)}{#if activePointFrame.surfaceVisibilityM !== null} · {formatVisibility(activePointFrame.surfaceVisibilityM)}{/if} · {pointGroundFog.reason}</span>{/if}<span>Windy 地面阵风：{activePointFrame.surfaceWindGustMs === null ? '未返回' : formatWind(activePointFrame.surfaceWindGustMs, 1, unitSystem)}（地面字段，不代表高空）</span></div>
-							<button class="secondary-button viewer-open-button" on:click={(event) => openProfileViewer('point', event)}>全屏查看剖面</button>
-						</div>
-						{#if pointProfile.verticalDataNotice}<div class="profile-data-notice" role="status"><strong>{pointProfile.dataSource === 'windy-legacy-meteogram' ? '已读取 Windy 旧版兼容数据（官方标记弃用）' : '高空数据说明'}</strong><p>{pointProfile.verticalDataNotice}</p></div>{/if}
-						{#if activePointFrame.timeAlignmentNotice}<div class="profile-data-notice" role="status"><strong>部分预报字段时次未对齐</strong><p>{activePointFrame.timeAlignmentNotice}</p></div>{/if}
+					<div class="point-summary-copy">
+						<strong>{formatForecastTime(effectiveForecastTimestampMs ?? Date.now())} · 请求 {selectedModel.toUpperCase()}</strong>
+						<span><b>地形与有效层</b>：{pointTerrainM === null ? '地形高度未知' : `${pointTerrainSource} ${formatHeight(pointTerrainM, 0, unitSystem)} 海拔`} · 垂直层 {pointGroundLevels.length} 层{activePointFrame.surfaceLevel ? ' · 近地面温度或风可用' : ''}</span>
+						<span><b>目标高度</b>：{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'} · {targetHeightResult?.ok ? `${formatTemperature(targetHeightResult.temperatureC, 1, unitSystem)} · 湿度 ${formatValue(targetHeightResult.humidityPct, 0, '%')} · 风 ${formatWind(targetHeightResult.windSpeedMs, 1, unitSystem)}` : targetHeightResult?.reason === 'below-terrain' ? '低于地形' : '暂无包围该高度的有效层'}</span>
+						<span><b>0°C 温度层估算</b>：{freezingLevelText(pointFreezingLevels)}</span>
+						{#if pointGroundFog}<span><b>地面雾／能见度</b>：{groundFogStatusLabel(pointGroundFog.status)}{#if activePointFrame.surfaceVisibilityM !== null} · {formatVisibility(activePointFrame.surfaceVisibilityM)}{/if} · {pointGroundFog.reason}</span>{/if}
+						<span><b>Windy 地面阵风</b>：{activePointFrame.surfaceWindGustMs === null ? '未返回' : formatWind(activePointFrame.surfaceWindGustMs, 1, unitSystem)}（地面字段，不代表高空）</span>
+					</div>
+					<button class="secondary-button viewer-open-button" on:click={(event) => openProfileViewer('point', event)}>全屏查看剖面</button>
+				</div>
+				{#if pointProfile.verticalDataNotice}<div class="profile-data-notice" role="status"><strong>{pointProfile.dataSource === 'windy-legacy-meteogram' ? '已读取 Windy 旧版兼容数据（官方标记弃用）' : '高空数据说明'}</strong><p>{pointProfile.verticalDataNotice}</p></div>{/if}
+				{#if activePointFrame.timeAlignmentNotice}<div class="profile-data-notice" role="status"><strong>部分预报字段时次未对齐</strong><p>{activePointFrame.timeAlignmentNotice}</p></div>{/if}
 					{/if}
 				{:else if pointProfileLoading}<p class="inline-note" role="status">正在读取该点的垂直天气数据，结果将直接显示在这里。</p>{/if}
 			</div>
@@ -2088,10 +2095,16 @@
 	.route-point-detail > strong { color: #314f50; font-size: 11px; overflow-wrap: anywhere; }
 	.route-point-detail > span { color: #5a6c6b; font-size: 10px; }
 	.point-summary-card, .route-summary-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; margin-top: 8px; border: 1px solid var(--profile-line); border-radius: 9px; padding: 12px; background: #f7faf8; }
+	.point-summary-card { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 10px; }
 	.point-summary-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+	.point-summary-copy > strong { margin-bottom: 2px; border-bottom: 1px solid #dce6e3; padding-bottom: 8px; }
 	.point-summary-copy strong { color: #23464b; font-size: 15px; }
 	.point-summary-copy span { color: var(--profile-muted); font-size: 14px; line-height: 1.45; }
-	.viewer-open-button { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
+	.point-summary-copy > span { padding: 6px 0; overflow-wrap: anywhere; }
+	.point-summary-copy > span + span { border-top: 1px solid #e5ece9; }
+	.point-summary-copy > span b { color: #355c60; font-weight: 650; }
+	.point-summary-card .viewer-open-button { grid-column: 1; grid-row: auto; justify-self: end; white-space: nowrap; }
+	.route-summary-card .viewer-open-button { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
 	.route-summary-card > div { display: flex; flex-direction: column; gap: 3px; }
 	.route-summary-card > div span { color: var(--profile-muted); font-size: 13px; }
 	.route-summary-card > div strong { color: #23464b; font-size: 16px; }
@@ -2510,8 +2523,7 @@
 		.possible-cloud-list > div { align-items: flex-start; flex-direction: column; gap: 2px; }
 		.route-weather-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 		.route-weather-summary .viewer-open-button { grid-column: 1 / -1; grid-row: auto; }
-		.point-summary-card { grid-template-columns: minmax(0, 1fr); }
-		.point-summary-card .viewer-open-button { grid-column: 1; grid-row: auto; width: 100%; }
+		.point-summary-card .viewer-open-button { width: 100%; }
 	}
 	@media (max-width: 480px) {
 		.plugin-shell { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
