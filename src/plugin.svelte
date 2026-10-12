@@ -124,6 +124,12 @@
 			{/if}
 			{#if routeFavoriteStatus}<p class="load-status" role="status">{routeFavoriteStatus}</p>{/if}
 			{#if routePoints.length >= 2}
+				<SightlineAnalysis start={routePoints[0]} end={routePoints[routePoints.length - 1]}
+					model={selectedModel} step={forecastStep} timestampMs={sightlineForecastTimestampMs ?? windyTimestampMs}
+					{unitSystem} queryAltitudeM={targetAltitudeM}
+					fetchElevation={fetchSightlineElevation} fetchProfile={fetchSightlineProfile}
+					on:time={(event) => changeForecastTime(event.detail)} on:altitude={(event) => setTargetAltitudeFromMsl(event.detail)}
+					on:mapEvidence={(event) => sightlineMapEvidence = event.detail} on:locate={locateSightline} />
 				<div class="analysis-count"><span>路线顺序点均保留 · 计划分析点 <strong>{analysisPoints.length}</strong></span><label class="sample-count-control">天气采样<select value={routeSamplingMode} on:change={handleRouteSamplingMode}><option value="spacing">按间距</option><option value="count">按点数</option></select></label></div>
 				<div class="analysis-count">{#if routeSamplingMode === 'spacing'}<label class="sample-count-control">目标间距<select value={routeWeatherSpacingM} on:change={handleRouteWeatherSpacing}><option value={2000}>约 2 千米</option><option value={5000}>约 5 千米</option><option value={10000}>约 10 千米</option></select></label>{:else}<label class="sample-count-control">等距目标<input type="number" min="2" max="61" step="1" value={analysisCount} on:change={handleAnalysisCount} aria-label="等距分析目标点数" /></label>{/if}<span>等距网格间隔 {formatDistance(routeWeatherGridSpacingM, 1, unitSystem)}</span></div>
 				<div class="route-summary-card">
@@ -402,6 +408,7 @@
 	import HumidityGauge from './HumidityGauge.svelte';
 	import FavoritePlaces from './FavoritePlaces.svelte';
 	import BuiltInPlaces from './BuiltInPlaces.svelte';
+	import SightlineAnalysis from './SightlineAnalysis.svelte';
 	import { assessGroundFog, groundFogStatusLabel } from './lib/fog.js';
 	import { getElevation, getMeteogramForecastData, getPointForecastData } from '@windy/fetch';
 	import store from '@windy/store';
@@ -426,6 +433,7 @@
 
 	const elevationCache = new Map<string, number | null>();
 	const weatherProfileCache = createMemoryCache({ ttlMs: 5 * 60_000, maxEntries: 96 });
+	const sightlineElevationCache = createMemoryCache({ ttlMs: 60 * 60_000, maxEntries: 512 });
 	let selectedModel: ForecastModel = 'ecmwf';
 	let unitSystem: 'metric' | 'imperial' = 'metric';
 	let forecastContextReady = false;
@@ -489,6 +497,7 @@
 	let routeDisplayVariable: 'cloud' | 'thickness' | 'humidity' | 'temperature' | 'wind' = 'cloud';
 	let selectedForecastTimestampMs: number | null = null;
 	let windyTimestampMs: number | null = null;
+	let sightlineForecastTimestampMs: number | null = null;
 	let timestampListenerId: number | null = null;
 	let productListenerId: number | null = null;
 	let routePoints: RoutePoint[] = [];
@@ -505,6 +514,8 @@
 	let activeTerrainRun = 0;
 	let terrainRequestController: AbortController | null = null;
 	let routeLayer: any = null;
+	let sightlineLayer: any = null;
+	let sightlineMapEvidence: any = null;
 	const profileTrendMetrics = [
 		{ field: 'temperatureC', title: '温度', unit: '℃', color: WEATHER_COLORS.series.temperature, digits: 1 },
 		{ field: 'relativeHumidityPct', title: '相对湿度', unit: '%', color: WEATHER_COLORS.series.humidity, digits: 0 },
@@ -778,6 +789,59 @@
 		abortIfNeeded(signal);
 		if (profile.ok && (!profile.servedModel || modelMatchesSelection(profile, model))) weatherProfileCache.set(cacheKey, profile);
 		return profile;
+	}
+
+	async function fetchSightlineElevation(point: { lat: number; lon: number }, signal: AbortSignal) {
+		abortIfNeeded(signal);
+		const key = requestCoordinateKey(point);
+		const cached = sightlineElevationCache.get(key);
+		if (cached !== undefined) return cached;
+		const value = payloadNumber(await withWindyRequestLimit(requestSignal => getElevation(point.lat, point.lon, { abortSignal: requestSignal }), elevationRequestKey(point), signal));
+		abortIfNeeded(signal);
+		if (Number.isFinite(value)) sightlineElevationCache.set(key, value);
+		return value;
+	}
+
+	function fetchSightlineProfile(point: { lat: number; lon: number }, model: ForecastModel, step: 1 | 3, signal: AbortSignal) {
+		return loadWeatherProfile(point, model, 'multiload', step, signal);
+	}
+
+	function sightlineMapCoordinates(plan: any) {
+		// Keep the short path continuous across the date line in Leaflet.
+		let previousLon = plan.start.lon;
+		return plan.terrainPoints.map((point: { lat: number; lon: number }) => {
+			let lon = point.lon;
+			while (lon - previousLon > 180) lon -= 360;
+			while (lon - previousLon < -180) lon += 360;
+			previousLon = lon;
+			return [point.lat, lon];
+		});
+	}
+
+	function locateSightline(event: CustomEvent) {
+		map.fitBounds(L.latLngBounds(sightlineMapCoordinates(event.detail)), { padding: [40, 40], maxZoom: 12 });
+	}
+
+	function drawSightlineEvidence(mode: string, evidence: any, system: 'metric' | 'imperial') {
+		if (!sightlineLayer) return;
+		sightlineLayer.clearLayers();
+		if (mode !== 'route' || !evidence?.plan) return;
+		L.polyline(sightlineMapCoordinates(evidence.plan), { color: '#176b76', weight: 4, opacity: 0.95, interactive: false }).addTo(sightlineLayer);
+		const markers = [
+			{ ...evidence.plan.start, color: '#176b76', text: `机位：${evidence.plan.start.name}` },
+			{ ...evidence.plan.end, color: '#176b76', text: `目标：${evidence.plan.end.name}` },
+			...evidence.blockers.map((point: any) => ({ ...point, color: '#f04468', text: `地形遮挡信号 · ${formatDistance(point.distanceM, 1, system)} · 高出视线 ${formatHeight(-point.clearanceM, 0, system)}` })),
+			...evidence.clouds.map((point: any) => ({ ...point, color: point.status === 'humidity-signal' ? '#a64de0' : point.status === 'cloud-band-signal' ? '#ff8738' : '#f04468', text: `${point.status === 'humidity-signal' ? '高湿可能云区' : point.status === 'cloud-band-signal' ? '模式云带可能相交（边界估算）' : '视线穿云信号'} · ${formatDistance(point.distanceM, 1, system)}` })),
+			...(evidence.focus ? [{ ...evidence.focus, color: '#ffd43b', text: `当前定位 · 距机位 ${formatDistance(evidence.focus.distanceM, 1, system)} · 视线海拔 ${formatHeight(evidence.focus.rayHeightM, 0, system)}` }] : []),
+		];
+		markers.forEach((point: any) => {
+			const label = document.createElement('span'); label.textContent = point.text;
+			let lon = point.lon;
+			while (lon - evidence.plan.start.lon > 180) lon -= 360;
+			while (lon - evidence.plan.start.lon < -180) lon += 360;
+			L.circleMarker([point.lat, lon], { radius: 7, color: '#fff', weight: 2, fillColor: point.color, fillOpacity: 1, bubblingMouseEvents: false })
+				.bindTooltip(label).on('click', function(this: any) { this.openTooltip(); }).addTo(sightlineLayer);
+		});
 	}
 
 	function closePlugin() {
@@ -1875,16 +1939,20 @@
 			const nextTimestamp = Number(value);
 			if (!Number.isFinite(nextTimestamp)) return;
 			windyTimestampMs = nextTimestamp;
+			// LOS points have their own coverage; do not snap them to the old route's common times.
+			sightlineForecastTimestampMs = nextTimestamp;
 			const times = selectionMode === 'point' ? pointProfile?.timestampsMs ?? [] : routeWeatherTimesMs;
 			selectedForecastTimestampMs = times.length ? nearestTimestamp(times, nextTimestamp) : nextTimestamp;
 		});
 		productListenerId = store.on('product', value => selectModel(value === 'icon' ? 'icon' : 'ecmwf'));
 		singleclick.on(config.name, handleMapClick);
 		routeLayer = L.layerGroup().addTo(map);
+		sightlineLayer = L.layerGroup().addTo(map);
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 	});
 
 	$: if (routeLayer) drawMapItems(selectionMode, routePoints, selectedPoint);
+	$: if (sightlineLayer) drawSightlineEvidence(selectionMode, sightlineMapEvidence, unitSystem);
 
 		onDestroy(() => {
 			resetRoutePointerInteraction();
@@ -1901,10 +1969,12 @@
 			routeLayer.remove();
 			routeLayer = null;
 		}
+		if (sightlineLayer) { sightlineLayer.remove(); sightlineLayer = null; }
 		document.removeEventListener('fullscreenchange', handleFullscreenChange);
 		if (document.fullscreenElement === profileViewerElement && typeof document.exitFullscreen === 'function') void document.exitFullscreen().catch(() => {});
 		elevationCache.clear();
 		weatherProfileCache.clear();
+		sightlineElevationCache.clear();
 	});
 </script>
 
