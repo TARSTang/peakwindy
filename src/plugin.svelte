@@ -34,70 +34,10 @@
 				<p class="eyebrow">地图选点与路线</p>
 				<h2>选点与地形剖面</h2>
 			</div>
-			<div class="segmented compact" aria-label="选点模式">
-				<button class:active={selectionMode === 'point'} aria-pressed={selectionMode === 'point'} on:click={() => setSelectionMode('point')}>单点</button>
-				<button class:active={selectionMode === 'route'} aria-pressed={selectionMode === 'route'} on:click={() => setSelectionMode('route')}>路线</button>
-			</div>
 		</div>
-		<p class="section-copy">{selectionMode === 'point' ? '可在地图点选位置，也可从 Windy 地点菜单直接打开。' : '按顺序点击地图或输入坐标添加路线点；点名称可修改并收藏，路线按实地距离计算。'}</p>
+		<p class="section-copy">按顺序点击地图或输入坐标添加路线点；点名称可修改并收藏，路线按实地距离计算。</p>
 
-		{#if selectionMode === 'point'}
-			<div class="coordinate-import">
-				<p class="coordinate-format-note">大陆奥维坐标：带 g，自动转换。境外坐标：不带 g，按原值查询。</p>
-				<form class="coordinate-entry ovi-coordinate-entry" on:submit|preventDefault={useOviCoordinate}>
-					<label>粘贴奥维坐标（经度,纬度）<input type="text" inputmode="text" autocomplete="off" bind:value={manualCoordinateText} placeholder="g102.07896,29.72998" aria-label="奥维坐标，国内带 g，境外不带 g，顺序为经度、纬度" /></label>
-					<button type="submit" class="small-button locate-button">解析定位</button>
-				</form>
-				{#if coordinateError}<span class="point-error">{coordinateError}</span>{/if}
-			</div>
-			<FavoritePlaces
-				currentPlace={selectedPoint ? { name: selectedPoint.name, lat: selectedPoint.lat, lon: selectedPoint.lon, elevationM: manualPointElevationM } : null}
-				selectLabel="使用此地点"
-				on:select={handleFavoritePointSelect}
-			/>
-			<BuiltInPlaces selectLabel="使用此地点" on:select={handleBuiltInPointSelect} />
-			{#if selectedPoint}
-			<div class="coordinate-card" bind:this={pointResultElement}>
-				<div><span class="tiny-label">分析地点</span><strong>{selectedPoint.name}</strong></div>
-				<div class="coord-value">{selectedPoint.lat.toFixed(4)}° · {selectedPoint.lon.toFixed(4)}°</div>
-				<div class="coordinate-provenance">{coordinateProvenance}</div>
-				<div class="point-facts" aria-live="polite">
-					<span>{manualPointElevationM !== null ? `手动校正海拔 ${formatHeight(manualPointElevationM, 0, unitSystem)}` : pointElevationLoading ? '正在读取地形…' : pointElevationM === null ? '地形高度缺测' : `地形海拔 ${formatHeight(pointElevationM, 0, unitSystem)}`}</span>
-					<span>{pointProfileLoading ? `正在读取 ${selectedModel.toUpperCase()} 天气…` : pointProfile?.ok ? pointProfile.hasVerticalLayers ? `0–9000 米内地形以上高度层 ${pointChartGroundLevels.length}/${pointChartModelLevels.length} 个` : 'Windy 仅返回近地面天气，未返回垂直层' : pointProfileError ? '天气读取失败' : '天气未读取'}</span>
-				</div>
-				{#if pointElevationError}<span class="point-error">{pointElevationError}</span>{/if}
-			</div>
-			<div class="weather-section">
-				<div class="weather-section-heading"><div><p class="eyebrow">垂直天气剖面</p><h3>单点高空天气</h3></div><span class="data-source-tag">Windy · {selectedModel.toUpperCase()}</span></div>
-				<p class="section-copy">选中地点后自动读取。高度使用 Windy 返回的位势高度；只在有效层之间插值，不向数据范围外推。</p>
-				<div class="weather-actions">
-					{#if pointProfileLoading}<span class="load-status" role="status">天气剖面读取中…</span><button class="text-button" on:click={cancelPointProfile}>取消读取</button>{:else}{#if pointElevationLoading}<span class="load-status" role="status">天气读取完成，地形读取中…</span>{:else}<button class="secondary-button" on:click={loadPointProfile}>{pointProfile?.ok ? '刷新天气' : '重新读取天气'}</button>{/if}{#if pointProfile || pointProfileError}<button class="secondary-button" on:click={copyPointDiagnosticSummary}>复制数据摘要</button>{/if}{/if}
-				</div>
-				{#if pointProfileSummaryCopyStatus}<p class="load-status" role="status">{pointProfileSummaryCopyStatus}</p>{/if}
-				{#if pointProfileSummaryText}<div class="diagnostic-copy-fallback"><label for="diagnostic-summary-text">诊断摘要可在此手动复制</label><textarea id="diagnostic-summary-text" bind:this={pointProfileSummaryTextarea} readonly rows="8" value={pointProfileSummaryText} on:focus={(event) => event.currentTarget.select()} aria-label="可手动复制的数据诊断摘要"></textarea><button type="button" class="secondary-button" on:click={selectDiagnosticSummary}>选中摘要文字</button></div>{/if}
-				{#if pointProfileError}<p class="inline-error" role="alert">{pointProfileError}</p>{/if}
-				{#if pointProfile?.ok}
-					{#if activePointFrame}
-				<div class="point-summary-card">
-					<div class="point-summary-copy">
-						<strong>{formatForecastTime(effectiveForecastTimestampMs ?? Date.now())} · 请求 {selectedModel.toUpperCase()}</strong>
-						<span><b>地形与有效层</b>：{pointTerrainM === null ? '地形高度未知' : `${pointTerrainSource} ${formatHeight(pointTerrainM, 0, unitSystem)} 海拔`} · 垂直层 {pointGroundLevels.length} 层{activePointFrame.surfaceLevel ? ' · 近地面温度或风可用' : ''}</span>
-						<span><b>目标高度</b>：{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'} · {targetHeightResult?.ok ? `${formatTemperature(targetHeightResult.temperatureC, 1, unitSystem)} · 湿度 ${formatValue(targetHeightResult.humidityPct, 0, '%')} · 风 ${formatWind(targetHeightResult.windSpeedMs, 1, unitSystem)}` : targetHeightResult?.reason === 'below-terrain' ? '低于地形' : '暂无包围该高度的有效层'}</span>
-						<span><b>0°C 温度层估算</b>：{freezingLevelText(pointFreezingLevels)}</span>
-						{#if pointGroundFog}<span><b>地面雾／能见度</b>：{groundFogStatusLabel(pointGroundFog.status)}{#if activePointFrame.surfaceVisibilityM !== null} · {formatVisibility(activePointFrame.surfaceVisibilityM)}{/if} · {pointGroundFog.reason}</span>{/if}
-						<span><b>Windy 地面阵风</b>：{activePointFrame.surfaceWindGustMs === null ? '未返回' : formatWind(activePointFrame.surfaceWindGustMs, 1, unitSystem)}（地面字段，不代表高空）</span>
-					</div>
-					<button class="secondary-button viewer-open-button" on:click={(event) => openProfileViewer('point', event)}>全屏查看剖面</button>
-				</div>
-				{#if pointProfile.verticalDataNotice}<div class="profile-data-notice" role="status"><strong>{pointProfile.dataSource === 'windy-legacy-meteogram' ? '已读取 Windy 旧版兼容数据（官方标记弃用）' : '高空数据说明'}</strong><p>{pointProfile.verticalDataNotice}</p></div>{/if}
-				{#if activePointFrame.timeAlignmentNotice}<div class="profile-data-notice" role="status"><strong>部分预报字段时次未对齐</strong><p>{activePointFrame.timeAlignmentNotice}</p></div>{/if}
-					{/if}
-				{:else if pointProfileLoading}<p class="inline-note" role="status">正在读取该点的垂直天气数据，结果将直接显示在这里。</p>{/if}
-			</div>
-			{:else}
-			<div class="point-empty-state" role="status"><strong>选择一个分析地点</strong><p>粘贴奥维坐标后解析定位，或直接点击 Windy 地图。选中后会自动显示地形和高空天气。</p></div>
-			{/if}
-		{:else}
+
 			<div class="route-toolbar">
 				<span>{routePoints.length} 个路线点{routeDistanceM ? ` · ${formatDistance(routeDistanceM, 1, unitSystem)}` : ''}</span>
 				<div>
@@ -167,7 +107,7 @@
 					{/if}
 				</div>
 			{/if}
-		{/if}
+
 
 		<p class="footer-note">剖面按 Windy 实际返回的高度层绘制；缺测不外推。</p>
 	</section>
@@ -175,7 +115,7 @@
 		<div bind:this={profileViewerElement} class="profile-viewer" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
 			<div class="viewer-page">
 				<header class="viewer-header">
-					<div><p class="viewer-kicker">高海拔天气剖面</p><h1 id="viewer-title">{profileViewer === 'point' ? '单点高空天气' : '路线天气剖面'}</h1><p>{profileViewer === 'point' ? `${selectedPoint?.name ?? '分析地点'} · ${selectedPoint?.lat.toFixed(4)}°，${selectedPoint?.lon.toFixed(4)}°` : `${routePoints.length} 个路线点 · ${formatDistance(routeDistanceM, 1, unitSystem)}`}</p></div>
+					<div><p class="viewer-kicker">高海拔天气剖面</p><h1 id="viewer-title">路线天气剖面</h1><p>{`${routePoints.length} 个路线点 · ${formatDistance(routeDistanceM, 1, unitSystem)}`}</p></div>
 					<button bind:this={profileViewerCloseButton} class="viewer-close" aria-label="关闭剖面" on:click={closeProfileViewer}>×</button>
 				</header>
 				<div class="viewer-timebar">
@@ -186,84 +126,9 @@
 						<div class="forecast-step-choice" aria-label="预报请求间隔"><span>请求间隔</span><button class:active={forecastStep === 1} aria-pressed={forecastStep === 1} on:click={() => changeForecastStep(1)}>1 小时</button><button class:active={forecastStep === 3} aria-pressed={forecastStep === 3} on:click={() => changeForecastStep(3)}>3 小时</button></div>
 					</div>
 				</div>
-				<div class="viewer-provenance"><span>数据接口：{viewerProvenance.source}</span><span>模式：{viewerProvenance.model}</span><span>有效时间间隔：{precipitationIntervalLabel}</span><span>起报：{formatSourceTime(viewerSourceProfile?.referenceTime)}</span><span>更新：{formatSourceTime(viewerSourceProfile?.updateTime)}</span>{#if profileViewer === 'point' && activePointFrame?.timeAlignmentNotice}<span>时间轴说明：{activePointFrame.timeAlignmentNotice}</span>{/if}{#if profileViewer === 'point' && activePointFrame?.surfaceVisibilityM !== null && activePointFrame?.surfaceVisibilityM !== undefined}<span>地面能见度：{formatVisibility(activePointFrame.surfaceVisibilityM)}（不代表高空）</span>{/if}{#if profileViewer === 'point' && activePointFrame}<span>地面阵风：{activePointFrame.surfaceWindGustMs === null ? 'Windy 未返回' : formatWind(activePointFrame.surfaceWindGustMs, 1, unitSystem)}（不代表高空）</span>{/if}</div>
+				<div class="viewer-provenance"><span>数据接口：{viewerProvenance.source}</span><span>模式：{viewerProvenance.model}</span><span>有效时间间隔：{precipitationIntervalLabel}</span><span>起报：{formatSourceTime(viewerSourceProfile?.referenceTime)}</span><span>更新：{formatSourceTime(viewerSourceProfile?.updateTime)}</span></div>
 				<p class="viewer-empty-note">新版接口请求范围：{requestedForecastDays} 天；{profileTimeOptions.length ? `${profileViewer === 'route' ? '路线共同' : '当前点'}返回时次：${formatForecastTime(profileTimeOptions[0])} 至 ${formatForecastTime(profileTimeOptions[profileTimeOptions.length - 1])}（北京时间），共 ${profileTimeOptions.length} 个时次。` : '尚无可用时次。'} 实际范围受模型与账号权限限制，各高度的有效层仍可能缺测。</p>
-				{#if profileViewer === 'point' && activePointFrame}
-					<div class="viewer-stat-grid">
-						<div><span>模式</span><strong>{selectedModel.toUpperCase()}</strong></div><div><span>当前模式层</span><strong>{pointGroundLevels.length}</strong></div><div><span>高度范围</span><strong>{pointGroundLevels.length ? `${formatHeight(pointCoverageMinM, 0, unitSystem)}–${formatHeight(pointCoverageMaxM, 0, unitSystem)}` : '无有效层'}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div>
-					</div>
-					<div class="viewer-section-head"><div><p class="viewer-kicker">垂直变化</p><h2>高度剖面曲线</h2></div><span>横轴为海拔，纵轴为对应变量</span></div>
-					<div class="viewer-target-control"><label>查询高度<input type="number" min={displayHeightNumber(0, 0, unitSystem)} max={displayHeightNumber(20_000, 0, unitSystem)} step={unitSystem === 'metric' ? 50 : 100} value={displayHeightNumber(Number(targetAltitudeM), 1, unitSystem)} on:change={handleTargetAltitudeChange} aria-label={`查询高度，${'海拔'}，${heightUnit(unitSystem)}`} />{heightUnit(unitSystem)}</label><span>{pointTerrainM === null ? '地形高度未知' : `${pointTerrainSource} ${formatHeight(pointTerrainM, 0, unitSystem)} 海拔`}{#if pointHasLevelsAboveChart} · 图框上方仍有有效层{/if}</span></div>
-					<div class="terrain-override-control"><label>地点实际海拔<input type="number" min="0" max={displayHeightNumber(10_000, 0, unitSystem)} step="any" value={manualPointElevationM === null ? '' : displayHeightNumber(manualPointElevationM, 1, unitSystem)} on:change={handleManualPointElevation} aria-label={`手动点位实际海拔，${heightUnit(unitSystem)}`} placeholder={pointTerrainM === null ? '可选' : displayHeightNumber(pointTerrainM, 0, unitSystem)} />{heightUnit(unitSystem)}</label><div class="terrain-override-actions"><button type="button" class="secondary-button" disabled={!Number.isFinite(pointTerrainM)} on:click={queryAtTerrainElevation}>查询该点地形高度</button>{#if manualPointElevationM !== null}<button type="button" class="text-button" on:click={clearManualPointElevation}>恢复 Windy 地形</button>{/if}</div><p>可填写该点的真实海拔，修正 Windy 地形网格误差；这会影响地形过滤，不会生成缺失天气值。</p>{#if manualPointElevationError}<p class="inline-error" role="alert">{manualPointElevationError}</p>{/if}</div>
-					<div class="altitude-presets" aria-label="常用查询高度">{#each ([3000, 4000, 5000, 6000, 7000, 8000, 9000]) as preset (preset)}<button class:active={Number(targetAltitudeM) === preset} aria-pressed={Number(targetAltitudeM) === preset} on:click={() => targetAltitudeM = preset}>{displayHeightNumber(preset, 0, unitSystem)} {heightUnit(unitSystem)}</button>{/each}</div>
-					<div class="target-result-grid"><div><span>温度</span><strong>{formatTemperature(targetHeightResult?.temperatureC, 1, unitSystem)}</strong><small>{methodLabel(targetHeightResult?.methods?.temperature)}</small></div><div><span>露点</span><strong>{formatTemperature(targetHeightResult?.dewPointC, 1, unitSystem)}</strong><small>{methodLabel(targetHeightResult?.methods?.dewPoint)}</small></div><div><span>相对湿度</span><strong>{formatValue(targetHeightResult?.humidityPct, 0, '%')}</strong><HumidityGauge value={targetHeightResult?.humidityPct} /><small>{methodLabel(targetHeightResult?.methods?.humidity)}</small></div><div><span>风速</span><strong>{formatWind(targetHeightResult?.windSpeedMs, 1, unitSystem)}</strong><small>{methodLabel(targetHeightResult?.methods?.wind)}</small></div><div><span>风向</span><strong>{formatWindDirection(targetHeightResult?.windDirectionDeg)}</strong><small>{methodLabel(targetHeightResult?.methods?.wind)}</small></div><div class="target-visibility-unavailable"><span>目标高度能见度</span><strong>未提供</strong><small>地面能见度不代替高空</small></div></div>
-					<details class="multiple-altitude-details">
-						<summary>同时查询多个任意高度{multiAltitudeHeightsM.length ? `（${multiAltitudeHeightsM.length} 项）` : ''}</summary>
-						<p>用逗号、顿号、分号或空格分隔，单位按当前选择的公制或英制填写；也可在数值后写 m、米、ft 或英尺。最多 200 项，输入顺序和重复项都会保留。</p>
-						<div class="multi-altitude-input-row"><label>高度列表（{'海拔'}，{heightUnit(unitSystem)}）<input type="text" inputmode="decimal" value={multiAltitudeInput} on:change={handleMultiAltitudeInput} placeholder={unitSystem === 'metric' ? '3666, 4900' : '12028, 16076'} aria-label={`多个查询高度，${'海拔'}，${heightUnit(unitSystem)}`} /></label><button type="button" class="secondary-button" disabled={!multiAltitudeInput} on:click={clearMultiAltitudeInput}>清空</button></div>
-						{#if multiAltitudeInputError}<p class="viewer-inline-error" role="alert">{multiAltitudeInputError}</p>{:else if multiAltitudeRows.length}<div class="viewer-table-wrap"><table class="viewer-table multi-altitude-table"><thead><tr><th>输入高度</th><th>温度</th><th>相对湿度</th><th>风速</th><th>风向</th><th>云量</th></tr></thead><tbody>{#each multiAltitudeRows as row, index (`multi-altitude-${index}-${row.heightM}`)}<tr><td>{formatHeight(row.heightM, 0, unitSystem)}<small>{'海拔'} · {row.values?.reason === 'below-terrain' ? '低于地形' : row.values?.ok ? '有效' : '缺测'}</small></td><td>{formatTemperature(row.values?.temperatureC, 1, unitSystem)}<small>{methodLabel(row.values?.methods?.temperature)}</small></td><td>{formatValue(row.values?.humidityPct, 0, '%')}<small>{methodLabel(row.values?.methods?.humidity)}</small></td><td>{formatWind(row.values?.windSpeedMs, 1, unitSystem)}<small>{methodLabel(row.values?.methods?.wind)}</small></td><td>{formatWindDirection(row.values?.windDirectionDeg)}</td><td>{formatValue(row.values?.cloudPct, 0, '%')}<small>{methodLabel(row.values?.methods?.cloud)}</small></td></tr>{/each}</tbody></table></div>{:else}<p class="viewer-empty-note">输入两个或更多高度，可一次对照温度、湿度、风和云量。</p>{/if}
-					</details>
-					{#if !targetHeightResult?.ok}<div class="query-data-status" role="status"><strong>{targetHeightResult?.reason === 'below-terrain' ? `查询海拔低于地形 ${formatHeight(Number(pointTerrainM), 0, unitSystem)}` : 'Windy 未返回能包围该查询海拔的有效高度层'}</strong><span>{targetHeightResult?.reason === 'below-terrain' ? '该查询值无效；灰色虚线只是地形以下的模式原始层，不纳入这里的天气结果。' : '当前高度没有直接值，也没有相邻有效模式层可插值。'}</span>{#if pointNearestUsableLevel}<button type="button" class="secondary-button" on:click={queryAtNearestProfileLevel}>查看最近有效层 {formatHeight(pointNearestUsableLevel.heightM, 0, unitSystem)}</button>{/if}</div>{/if}
-					<div class="cloud-assessment-wrap"><p class={`cloud-assessment cloud-assessment--${pointCloudAssessment.kind}`}>{pointCloudAssessment.text}</p><p class="cloud-direct-target">该高度附近模式层云量：{formatValue(targetHeightResult?.cloudPct, 0, '%')} · {methodLabel(targetHeightResult?.methods?.cloud)}</p>{#if pointHasGroupedClouds}<div class="cloud-layer-summary"><strong>Windy 分层云量概览</strong><span>低云 {formatValue(activePointFrame.lowCloudPct, 0, '%')}</span><span>中云 {formatValue(activePointFrame.mediumCloudPct, 0, '%')}</span><span>高云 {formatValue(activePointFrame.highCloudPct, 0, '%')}</span></div>{/if}</div>
-					<p class="freezing-level-note" role="status">0°C 温度层估算：{freezingLevelText(pointFreezingLevels)}。只在相邻有效模式温度层间线性插值，不跨缺测，也不外推。</p>
-					{#if pointPotentialIcingLevels.length}<div class="condition-cue"><strong>零下云层信号：{pointPotentialIcingLevels.length} 个模式层</strong><p>这些层同时满足温度不高于 0°C 和云量或高湿信号，只提示可能存在结冰条件，不表示一定结冰，也不估算强度。</p>{#each pointPotentialIcingLevels as level (`icing-${level.pressureHPa}-${level.heightM}`)}<span>{formatHeight(level.heightM, 0, unitSystem)} · {formatTemperature(level.temperatureC, 1, unitSystem)} · {level.cloudSignal === 'direct-cloud' ? `模式云量 ${formatValue(level.cloudPct, 0, '%')}` : `湿度推算信号 ${formatValue(level.relativeHumidityPct, 0, '%')}`}</span>{/each}</div>{/if}
-					<p class="trend-interaction-hint">拖动图表选海拔；点按彩色数据点读取该模式层，四图同步。近地面温度和风按模式地形高度定位。彩色实线为地形以上有效天气，灰色虚线为地形以下模式原始值，不代表地下实况。</p>
-					{#if pointTrendStatus}<div class="profile-coverage-notice" role="status"><strong>地形以上的有效层不足以形成连续趋势</strong><p>{pointTrendStatus} 图中灰色虚线和下方“仅模式参考”行保留了 Windy 的地下模式层原值；这些数值不代表地形处真实空气天气。</p></div>{/if}
-					<div class="trend-grid" use:observeTrendWidth>
-						{#each pointTrendCharts as metric (metric.field)}
-							{@const geometry = metric.geometry}
-							<div class="trend-panel">
-								<div class="trend-panel-heading"><h3>{metric.title} <small>{trendUnit(metric.field, unitSystem)}</small></h3><span>{trendCoverageSummary(geometry, metric.field, metric.digits)}</span></div>
-								{#if geometry}
-									{@const hasTrendLine = geometry.segments.some(segment => segment.length >= 2)}
-									{@const requestedAltitude = pointTargetAltitudeMsl ?? Number.NaN}
-									{@const targetAltitudeInChart = Number.isFinite(requestedAltitude) && requestedAltitude >= 0 && requestedAltitude <= geometry.maxHeightM}
-									{@const boundedAltitude = Math.max(0, Math.min(geometry.maxHeightM, Number.isFinite(requestedAltitude) ? requestedAltitude : 0))}
-									{@const targetX = geometry.x(boundedAltitude)}
-									{@const targetLabelX = Math.min(geometry.plot.right - 210, Math.max(geometry.plot.left + 4, targetX - 100))}
-									{@const targetValue = targetAltitudeInChart ? altitudeTrendValueAt(geometry, boundedAltitude) : null}
-									{@const targetY = targetValue === null ? null : geometry.y(targetValue)}
-									{@const valueLabelX = Math.min(geometry.plot.right - 144, Math.max(geometry.plot.left + 4, targetX + 8))}
-									{@const valueLabelY = targetY === null ? geometry.plot.top + 35 : Math.max(geometry.plot.top + 4, Math.min(geometry.plot.bottom - 25, targetY - 28))}
-									{@const sliderValue = Math.round(boundedAltitude / 50) * 50}
-										{@const terrainInChart = Number.isFinite(pointTerrainM) && pointTerrainM >= 0 && pointTerrainM <= geometry.maxHeightM}
-										{@const terrainX = geometry.x(terrainInChart ? Number(pointTerrainM) : 0)}
-										{@const terrainLabelOnLeft = terrainX > geometry.plot.right - 112}
-									{#if !hasTrendLine}<p class="trend-data-note trend-data-note--top">{geometry.points.length === 0 ? `0–${displayHeightNumber(9_000, 0, unitSystem)} ${heightUnit(unitSystem)}内没有地形以上的有效${metric.title}层。灰色虚线仅显示地形以下模式原始层。` : geometry.points.length === 1 ? `地形以上仅有 1 个有效层（${formatHeight(geometry.points[0].heightM, 0, unitSystem)}），已标出原值；单层不能形成趋势线。` : geometry.hasRepeatedHeights ? '多组原始值落在相同海拔，不能形成垂直趋势线；下方列出各层实际值。' : `地形以上有 ${geometry.points.length} 个有效点，但点之间存在缺测或模式层断档，不能可靠连线。`}</p>{/if}
-										{#if geometry.isolatedPoints.length}<div class="trend-observed-points" aria-label={`${metric.title}的 Windy 原始数据点`}>{#each geometry.isolatedPoints as point (`observed-${metric.field}-${point.heightM}-${point.value}`)}<span class="trend-observed-point" style={`--trend-color:${metric.color}`}><strong>{formatHeight(point.heightM, 0, unitSystem)}</strong><b>{formatTrendValue(point.value, metric.field, metric.digits, unitSystem)}</b><small>{point.source === 'model-surface' ? '模式地形近地面值' : `${point.pressureHPa} 百帕模式层`}</small></span>{/each}</div>{/if}
-										<svg viewBox={`0 0 ${trendChartWidth} 320`} preserveAspectRatio="none" role="group" aria-label={`${metric.title}随海拔变化图`}>
-										{#if geometry.belowTerrainPointCount > 0 && terrainInChart}<defs><clipPath id={`below-terrain-${metric.field}`}><rect x={geometry.plot.left} y={geometry.plot.top} width={Math.max(0, terrainX - geometry.plot.left)} height={geometry.plot.bottom - geometry.plot.top}/></clipPath></defs>{/if}
-										{#if terrainInChart && terrainX > geometry.plot.left}<rect x={geometry.plot.left} y={geometry.plot.top} width={terrainX - geometry.plot.left} height={geometry.plot.bottom - geometry.plot.top} class="viewer-below-terrain-area"/>{/if}
-										{#each geometry.valueTicks as tick (tick)}<line x1={geometry.plot.left} x2={geometry.plot.right} y1={geometry.y(tick)} y2={geometry.y(tick)} class="viewer-grid-line"/><text x="8" y={geometry.y(tick) + 5} class="viewer-axis-label">{formatTrendValue(tick, metric.field, metric.digits, unitSystem)}</text>{/each}{#if metric.field === 'relativeHumidityPct'}<rect x={geometry.plot.left} y={geometry.plot.top} width={geometry.plot.right - geometry.plot.left} height={Math.max(0, geometry.y(90) - geometry.plot.top)} class="humidity-threshold-band"/><line x1={geometry.plot.left} x2={geometry.plot.right} y1={geometry.y(90)} y2={geometry.y(90)} class="humidity-threshold-line"/><text x={geometry.plot.right - 6} y={geometry.y(90) - 6} text-anchor="end" class="humidity-threshold-label">90% 高湿参考</text>{/if}
-						{#each geometry.altitudeTicks as tick (tick)}<line x1={geometry.x(tick)} x2={geometry.x(tick)} y1={geometry.plot.top} y2={geometry.plot.bottom} class="viewer-grid-line viewer-grid-vertical"/><text x={geometry.x(tick)} y="307" text-anchor={tick === 0 ? 'start' : tick === geometry.maxHeightM ? 'end' : 'middle'} class="viewer-axis-label">{displayHeightNumber(tick, 0, unitSystem)} {heightUnit(unitSystem)}</text>{/each}
-										{#if geometry.referencePath && geometry.belowTerrainPointCount > 0 && terrainInChart && terrainX > geometry.plot.left}<path d={geometry.referencePath} class="trend-line trend-line--reference" clip-path={`url(#below-terrain-${metric.field})`} style={`--trend-color:${metric.color}`}/>{/if}
-						{#if geometry.path}<path d={geometry.path} class="trend-line" style={`--trend-color:${metric.color};stroke:${metric.color};stroke-width:4px;fill:none`}/>{/if}
-										{#each geometry.referencePoints.filter(point => point.belowTerrain) as point (`reference-${point.heightM}-${point.value}`)}<circle cx={point.x} cy={point.y} r="3.8" class="trend-reference-dot"><title>{formatHeight(point.heightM, 0, unitSystem)} · {formatTrendValue(point.value, metric.field, metric.digits, unitSystem)} · {point.source === 'model-surface' ? '模式地形近地面值，低于实际地形，仅供参考' : '地形以下模式原始层，仅供参考'}</title></circle>{/each}
-						{#each geometry.points as point (`${point.heightM}-${point.value}`)}{@const pointLabelX = point.x > geometry.plot.right - 190 ? point.x - 184 : point.x + 10}{@const pointLabelY = point.y < geometry.plot.top + 28 ? point.y + 24 : point.y - 9}<circle cx={point.x} cy={point.y} r="6" class="trend-dot" style={`--trend-color:${metric.color}`}><title>{formatHeight(point.heightM, 0, unitSystem)} · {formatTrendValue(point.value, metric.field, metric.digits, unitSystem)} · {point.source === 'model-surface' ? '模式地形近地面值' : `${point.pressureHPa} 百帕模式层`}</title></circle>{#if !hasTrendLine || geometry.segments.some(segment => segment.length === 1 && segment[0] === point)}<text x={pointLabelX} y={pointLabelY} class="trend-point-value" style={`--trend-color:${metric.color}`}>{formatHeight(point.heightM, 0, unitSystem)} · {formatTrendValue(point.value, metric.field, metric.digits, unitSystem)}</text>{/if}{/each}
-										{#if terrainInChart}<line x1={terrainX} x2={terrainX} y1={geometry.plot.top} y2={geometry.plot.bottom} class="viewer-terrain-line"/><text x={terrainLabelOnLeft ? terrainX - 5 : terrainX + 5} y={geometry.plot.bottom - 8} text-anchor={terrainLabelOnLeft ? 'end' : 'start'} class="viewer-terrain-label">地形 {formatHeight(Number(pointTerrainM), 0, unitSystem)}</text>{#if terrainX - geometry.plot.left > 88}<text x={(terrainX + geometry.plot.left) / 2} y={geometry.plot.top + 18} text-anchor="middle" class="viewer-below-terrain-label">地形以下</text>{/if}{/if}
-										{#if targetAltitudeInChart}<line x1={targetX} x2={targetX} y1={geometry.plot.top} y2={geometry.plot.bottom} class="viewer-target-line"/><rect x={targetLabelX} y="7" width="210" height="23" rx="4" class="viewer-target-tag"/><text x={targetLabelX + 8} y="23" class="viewer-target-label">查询点 {formatHeight(boundedAltitude, 0, unitSystem)} 海拔</text>{#if targetY !== null}<line x1={geometry.plot.left} x2={geometry.plot.right} y1={targetY} y2={targetY} class="viewer-target-value-line"/><circle cx={targetX} cy={targetY} r="6" class="viewer-query-dot" style={`--trend-color:${metric.color}`}/>{/if}<rect x={valueLabelX} y={valueLabelY} width="140" height="23" rx="4" class="viewer-query-value-tag"/><text x={valueLabelX + 7} y={valueLabelY + 16} class="viewer-query-value-label">查询值 {targetValue === null ? Number.isFinite(pointTerrainM) && boundedAltitude < pointTerrainM ? '地形以下' : '该高度缺测' : formatTrendValue(targetValue, metric.field, metric.digits, unitSystem)}</text>{/if}
-											<rect x={geometry.plot.left} y={geometry.plot.top} width={geometry.plot.right - geometry.plot.left} height={geometry.plot.bottom - geometry.plot.top} class="trend-altitude-slider" role="slider" tabindex="0" aria-label={`拖动选择查询海拔：${metric.title}`} aria-valuemin="0" aria-valuemax={geometry.maxHeightM} aria-valuenow={Math.min(geometry.maxHeightM, Math.max(0, sliderValue))} aria-valuetext={`${displayHeightNumber(sliderValue, 0, unitSystem)} ${heightUnit(unitSystem)} 海拔`} on:pointerdown={(event) => beginTrendDrag(event, geometry)} on:pointermove={(event) => moveTrendDrag(event, geometry)} on:pointerup={endTrendDrag} on:pointercancel={endTrendDrag} on:keydown={(event) => handleTrendSliderKeydown(event, geometry.maxHeightM)}><title>点按或拖动选择查询海拔</title></rect>
-											{#each geometry.points as point (`select-${point.heightM}-${point.value}`)}<circle cx={point.x} cy={point.y} r="12" class="trend-point-hit" role="button" tabindex="0" aria-label={`查询 ${formatHeight(point.heightM, 0, unitSystem)}高度，${metric.title} ${formatTrendValue(point.value, metric.field, metric.digits, unitSystem)}`} on:pointerdown|stopPropagation on:click|stopPropagation={() => selectTrendPoint(point.heightM)} on:keydown|stopPropagation={(event) => handleTrendPointKeydown(event, point.heightM)}><title>{point.source === 'model-surface' ? '模式地形近地面值' : '模式层原值'} · 点按查看该高度</title></circle>{/each}
-										</svg>
 
-									{:else}<p class="viewer-empty-chart">当前变量剖面图不可用。</p>{/if}
-							</div>
-						{/each}
-					</div>
-					<div class="viewer-cloud-section">
-						<div class="viewer-section-head"><div><p class="viewer-kicker">云层信息</p><h2>模式云带与高湿可能云区</h2></div><span>逐层云量来自 Windy；云带边界为层间估算</span></div>
-						<p class="cloud-direct-base">Windy 直接云底：{activePointFrame.cloudBaseM === null ? '未返回' : `${formatHeight(activePointFrame.cloudBaseM, 0, unitSystem)}`} · 直接云顶字段：未返回 · 直接云厚度字段：未返回</p>
-						{#if pointGroundLevels.some(level => Number.isFinite(level.cloudPct))}
-							<div class="cloud-level-list">{#each pointGroundLevels.filter(level => Number.isFinite(level.cloudPct)) as level (`cloud-${level.pressureHPa}-${level.heightM}`)}<div><span>{formatHeight(level.heightM, 0, unitSystem)}<small>{level.pressureHPa} 百帕</small></span><div class="cloud-level-track"><i style={`width:${Math.max(0, Math.min(100, level.cloudPct ?? 0))}%;background:${cloudColor(level.cloudPct)}`}></i></div><strong>{Math.round(level.cloudPct ?? 0)}%</strong></div>{/each}</div>
-						{:else}<p class="viewer-empty-note">当前模式没有返回逐层云量字段，不能据此判断云底、云顶或云厚度。</p>{/if}
-						{#if pointDirectCloudBands.length}<div class="possible-cloud-list direct-cloud-list"><strong>逐层云量识别到的模式云带</strong>{#each pointDirectCloudBands as band (`direct-cloud-${band.lowHeightM}-${band.highHeightM}`)}<div><span>{band.lowerBoundaryKnown ? formatHeight(band.lowHeightM, 0, unitSystem) : '低边界未确定'}–{band.upperBoundaryKnown ? formatHeight(band.highHeightM, 0, unitSystem) : '高边界未确定'}</span><small>最高逐层云量 {formatValue(band.peakCloudPct, 0, '%')} · {band.thicknessM === null ? '边界不完整，不能估算厚度' : `层界估算厚度约 ${formatHeight(band.thicknessM, 0, unitSystem)}`} · 上下界按相邻清空层与有云层的中点估算，不是直接观测</small></div>{/each}</div>{:else if pointGroundLevels.some(level => Number.isFinite(level.cloudPct))}<p class="viewer-empty-note">当前地形以上未识别到非零模式云带；这不代表实况无云。</p>{/if}
-						{#if pointHumidityBands.length}
-							<div class="possible-cloud-list"><strong>湿度推算的可能云区（相对湿度 ≥ 90%）</strong>{#each pointHumidityBands as band (`rh-${band.lowHeightM}-${band.highHeightM}`)}<div><span>{band.lowerBoundaryKnown ? formatHeight(band.lowHeightM, 0, unitSystem) : '低边界未确定'}–{band.upperBoundaryKnown ? formatHeight(band.highHeightM, 0, unitSystem) : '高边界未确定'}</span><small>{band.lowerBoundaryKnown && band.upperBoundaryKnown ? `可能云区估算厚度约 ${formatHeight(band.highHeightM - band.lowHeightM, 0, unitSystem)} · 不等同云层实测厚度` : '边界不完整，不能计算厚度'}{#if band.extendsAboveChart} · {band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能延伸到图框以上，上界未确定'}{/if} · 高湿启发式估算，不是云概率</small></div>{/each}</div>
-						{:else}<p class="viewer-empty-note">当前没有达到相对湿度 90% 的连续有效区段；这不等于无云。</p>{/if}
-					</div>
-					<div class="viewer-table-section"><div class="viewer-section-head"><div><p class="viewer-kicker">模式原始层</p><h2>逐层数值</h2></div></div><div class="viewer-table-wrap"><table class="viewer-table"><thead><tr><th>海拔 / 气压</th><th>温度</th><th>露点</th><th>湿度</th><th>风速</th><th>风向</th><th>云量</th></tr></thead><tbody>{#each pointChartGeometry.modelVisible as level (`point-${level.source}-${level.pressureHPa}-${level.heightM}`)}<tr class:viewer-underground-row={Number.isFinite(pointTerrainM) && level.heightM < pointTerrainM}><td>{formatHeight(level.heightM, 0, unitSystem)}<small>{level.source === 'model-surface' ? '模式地形近地面值' : `${level.pressureHPa} 百帕`} · {Number.isFinite(pointTerrainM) && level.heightM < pointTerrainM ? '地形以下，仅模式参考' : '地形以上'}</small></td><td>{formatTemperature(level.temperatureC, 1, unitSystem)}</td><td>{formatTemperature(level.dewPointC, 1, unitSystem)}</td><td>{formatValue(level.relativeHumidityPct, 0, '%')}</td><td>{formatWind(level.windSpeedMs, 1, unitSystem)}</td><td>{formatWindDirection(level.windDirectionDeg)}</td><td>{formatValue(level.cloudPct, 0, '%')}</td></tr>{/each}</tbody></table></div>
-						<details class="height-range-details"><summary>按海拔范围查询 · 每 {displayHeightNumber(profileRangeStepM, 0, unitSystem)} {heightUnit(unitSystem)}</summary><div class="height-range-controls"><label>起始海拔<input type="number" min="0" max={displayHeightNumber(9000, 0, unitSystem)} step="any" value={displayHeightNumber(profileRangeStartM ?? profileRangeStartDefaultM, 1, unitSystem)} on:change={(event) => handleProfileRangeChange(event, 'start')} aria-label="高度范围起始海拔" /></label><label>结束海拔<input type="number" min="0" max={displayHeightNumber(9000, 0, unitSystem)} step="any" value={displayHeightNumber(profileRangeEndM ?? profileRangeEndDefaultM, 1, unitSystem)} on:change={(event) => handleProfileRangeChange(event, 'end')} aria-label="高度范围结束海拔" /></label><label>采样间隔<input type="number" min={displayHeightNumber(50, 0, unitSystem)} max={displayHeightNumber(2000, 0, unitSystem)} step="any" value={displayHeightNumber(profileRangeStepM, 0, unitSystem)} on:change={handleProfileRangeStepChange} aria-label={`高度采样间隔，${heightUnit(unitSystem)}`} /></label></div>{#if profileRangeStepError}<p class="viewer-inline-error" role="alert">{profileRangeStepError}</p>{/if}{#if profileRangeRows.length}<div class="viewer-table-wrap"><table class="viewer-table"><thead><tr><th>海拔</th><th>温度</th><th>露点</th><th>湿度</th><th>风速</th><th>风向</th></tr></thead><tbody>{#each profileRangeRows as row (row.heightM)}<tr><td>{formatHeight(row.heightM, 0, unitSystem)}<small>{row.values.reason === 'below-terrain' ? '低于地形' : row.values.ok ? '有效' : '缺测'}</small></td><td>{formatTemperature(row.values.temperatureC, 1, unitSystem)}<small>{methodLabel(row.values.methods?.temperature)}</small></td><td>{formatTemperature(row.values.dewPointC, 1, unitSystem)}<small>{methodLabel(row.values.methods?.dewPoint)}</small></td><td>{formatValue(row.values.humidityPct, 0, '%')}<small>{methodLabel(row.values.methods?.humidity)}</small></td><td>{formatWind(row.values.windSpeedMs, 1, unitSystem)}<small>{methodLabel(row.values.methods?.wind)}</small></td><td>{formatWindDirection(row.values.windDirectionDeg)}</td></tr>{/each}</tbody></table></div>{:else}<p class="viewer-empty-note">{!pointGroundLevels.length ? '当前没有地形以上的有效天气层。' : profileRangeValid ? '当前范围没有采样点，请调整起止海拔。' : '起始海拔不能高于结束海拔。'}</p>{/if}<p class="viewer-footnote">每 {displayHeightNumber(profileRangeStepM, 0, unitSystem)} {heightUnit(unitSystem)} 为展示采样间隔，不代表模式分辨率；模式数据范围外不外推。</p></details></div>
-				{:else if profileViewer === 'point'}<div class="viewer-loading" role="status">{pointProfileLoading ? '正在读取高空天气…' : pointProfileError || '当前时刻没有可显示的垂直数据'}</div>{/if}
 				{#if profileViewer === 'route'}
 					<div class="viewer-stat-grid"><div><span>模式</span><strong>{selectedModel.toUpperCase()}</strong></div><div><span>有垂直数据</span><strong>{routeWeatherSamples.filter(sample => sample.profile?.hasVerticalLayers).length}/{routeWeatherSamples.length} 点</strong></div><div><span>路线距离</span><strong>{formatDistance(routeDistanceM, 1, unitSystem)}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div></div>
 					<div class="viewer-target-control"><label>查询高度<input type="number" min={displayHeightNumber(0, 0, unitSystem)} max={displayHeightNumber(20_000, 0, unitSystem)} step={unitSystem === 'metric' ? 50 : 100} value={displayHeightNumber(Number(targetAltitudeM), 1, unitSystem)} on:change={handleTargetAltitudeChange} aria-label={`查询高度，${'海拔'}，${heightUnit(unitSystem)}`} />{heightUnit(unitSystem)}</label><span>横轴：路线累计距离 · 纵轴：海拔</span></div>
@@ -358,9 +223,10 @@
 							{#if focusedRouteHasGroupedClouds}<span>低云 {formatValue(focusedRouteFrame.lowCloudPct, 0, '%')} · 中云 {formatValue(focusedRouteFrame.mediumCloudPct, 0, '%')} · 高云 {formatValue(focusedRouteFrame.highCloudPct, 0, '%')}</span>{/if}
 							{#if focusedRoutePotentialIcingLevels.length}<div class="condition-cue"><strong>该点存在零下云层信号</strong><p>{focusedRoutePotentialIcingLevels.length} 个模式层同时满足温度不高于 0°C 和云量或高湿信号，只提示可能存在结冰条件，不表示一定结冰，也不估算强度。</p><span>{#each focusedRoutePotentialIcingLevels as level, icingIndex (`route-icing-${level.pressureHPa}-${level.heightM}`)}{#if icingIndex > 0} · {/if}{formatHeight(level.heightM, 0, unitSystem)}{/each}</span></div>{/if}
 							{#if focusedRouteDirectCloudBands.length}<div class="possible-cloud-list direct-cloud-list"><strong>模式云带层界估算</strong>{#each focusedRouteDirectCloudBands as band (`route-cloud-${band.lowHeightM}-${band.highHeightM}`)}<div><span>{band.lowerBoundaryKnown ? formatHeight(band.lowHeightM, 0, unitSystem) : '低边界未确定'}–{band.upperBoundaryKnown ? formatHeight(band.highHeightM, 0, unitSystem) : '高边界未确定'}</span><small>{band.thicknessM === null ? '边界不完整，不能估算厚度' : `层界估算厚度约 ${formatHeight(band.thicknessM, 0, unitSystem)}`}{#if band.highHeightM > 9_000} · {band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能延伸到图框以上，云顶未确定'}{/if} · 最高逐层云量 {formatValue(band.peakCloudPct, 0, '%')}</small></div>{/each}</div>{/if}
+							<p class="freezing-level-note" role="status">{explainProfileQuery(focusedRouteFrame, focusedRouteTargetAltitudeMsl, focusedRouteTerrainM)}</p>
 							<div class="target-result-grid route-target-results"><div><span>温度</span><strong>{formatTemperature(focusedRouteTargetResult?.temperatureC, 1, unitSystem)}</strong><small>{methodLabel(focusedRouteTargetResult?.methods?.temperature)}</small></div><div><span>露点</span><strong>{formatTemperature(focusedRouteTargetResult?.dewPointC, 1, unitSystem)}</strong><small>{methodLabel(focusedRouteTargetResult?.methods?.dewPoint)}</small></div><div><span>相对湿度</span><strong>{formatValue(focusedRouteTargetResult?.humidityPct, 0, '%')}</strong><HumidityGauge value={focusedRouteTargetResult?.humidityPct} /><small>{methodLabel(focusedRouteTargetResult?.methods?.humidity)}</small></div><div><span>风速</span><strong>{formatWind(focusedRouteTargetResult?.windSpeedMs, 1, unitSystem)}</strong><small>{methodLabel(focusedRouteTargetResult?.methods?.wind)}</small></div><div><span>风向</span><strong>{formatWindDirection(focusedRouteTargetResult?.windDirectionDeg)}</strong><small>{methodLabel(focusedRouteTargetResult?.methods?.wind)}</small></div><div class="target-visibility-unavailable"><span>目标高度能见度</span><strong>未提供</strong><small>地面能见度不代替高空</small></div></div>
 							<div class="route-point-profile-block">
-								<div class="viewer-section-head"><div><p class="viewer-kicker">所选路线点 · 单点剖面</p><h2>海拔 0–9000 米垂直变化</h2></div><span>点按或拖动任一图，路线查询高度同步</span></div>
+								<div class="viewer-section-head"><div><p class="viewer-kicker">所选路线点 · 垂直剖面</p><h2>海拔 0–9000 米垂直变化</h2></div><span>点按或拖动任一图，路线查询高度同步</span></div>
 								<div class="profile-coverage-notice route-profile-coverage" role="status">
 									<strong>{focusedRouteTargetResult?.reason === 'below-terrain' ? `查询海拔 ${formatHeight(focusedRouteTargetAltitudeMsl, 0, unitSystem)} 低于地形 ${formatHeight(focusedRouteTerrainM, 0, unitSystem)}；该高度没有可用天气值。` : focusedRouteTrendMetrics.some(metric => metric.geometry?.path) ? '已按 Windy 返回的有效高度层绘制趋势。' : '当前时刻没有足够的相邻高度层形成趋势线。'}</strong>
 									<p>{#each focusedRouteTrendMetrics as metric, metricIndex (`coverage-${metric.field}`)}{#if metricIndex > 0} · {/if}{metric.title} {metric.geometry?.points.length ?? 0} 个有效层{/each}。数值只取 Windy 原始层；每项至少需要两个相邻有效层才连线，缺测不补齐、不外推。</p>
@@ -429,8 +295,8 @@
 		import { resolveOviCoordinate } from './lib/coordinates.js';
 	import { buildAnalysisPoints, buildRoute, isValidCoordinate, normalizeRoutePointNames, renameRoutePointName, samplePolyline } from './lib/route.js';
 		import { createMemoryCache, isWindyRateLimit, mapWithConcurrency, withWindyRequestLimit } from './lib/async.js';
-		import { altitudeAfterSliderKey, altitudeAtChartX, altitudeTrendValueAt, assessCloudAtHeight, attachRequestedModel, buildAltitudeTrend, buildCrossSectionGeometry, buildProfileDiagnosticSummary, buildRouteFreezingMarks, buildRoutePrecipitationGeometry, buildRouteTargetLine, buildRouteTargetSummaries, buildRouteTerrainOverlay, buildVerticalChartPoints, closestTimeIndex, directCloudLayerBands, forecastIntervalHours, formatForecastTime, formatWindDirection, windFlowRotationDeg, frameAtTimestamp, freezingLevelCrossings, hasTrendableVerticalProfile, humidityCloudBands, interpolateAtHeight, levelsIncludingModelSurface, nearestForecastTimestamp, nearestUsableProfileLevel, parseWindyLegacyProfile, parseWindyProfile, potentialIcingLevels, profileMatchesRequestedModel, profileProvenance, resolveTerrainElevation, sampleAltitudeRange, summarizeRouteSurfaceWindGust, visibleProfileLevels } from './lib/profile.js';
-		import { distanceToDisplay, distanceUnit, heightFromDisplay, heightToDisplay, heightUnit, parseAltitudeList, precipitationToDisplay, precipitationUnit, temperatureFromDisplay, temperatureToDisplay, temperatureUnit, windFromDisplay, windToDisplay, windUnit } from './lib/units.js';
+		import { altitudeAfterSliderKey, altitudeAtChartX, altitudeTrendValueAt, assessCloudAtHeight, attachRequestedModel, buildAltitudeTrend, buildCrossSectionGeometry, buildProfileDiagnosticSummary, buildRouteFreezingMarks, buildRoutePrecipitationGeometry, buildRouteTargetLine, buildRouteTargetSummaries, buildRouteTerrainOverlay, closestTimeIndex, directCloudLayerBands, forecastIntervalHours, formatForecastTime, formatWindDirection, windFlowRotationDeg, frameAtTimestamp, freezingLevelCrossings, hasTrendableVerticalProfile, humidityCloudBands, interpolateAtHeight, levelsIncludingModelSurface, nearestForecastTimestamp, nearestUsableProfileLevel, parseWindyLegacyProfile, parseWindyProfile, mergeCompatibleProfileFields, explainProfileQuery, potentialIcingLevels, profileMatchesRequestedModel, profileProvenance, summarizeRouteSurfaceWindGust } from './lib/profile.js';
+		import { distanceToDisplay, distanceUnit, heightFromDisplay, heightToDisplay, heightUnit, precipitationToDisplay, precipitationUnit, temperatureToDisplay, temperatureUnit, windToDisplay, windUnit } from './lib/units.js';
 
 	type ForecastModel = 'ecmwf' | 'icon';
 	type RoutePoint = { id: string; name: string; nameSource?: 'automatic' | 'custom'; lat: number; lon: number; elevationM?: number };
@@ -443,35 +309,17 @@
 	let selectedModel: ForecastModel = 'ecmwf';
 	let unitSystem: 'metric' | 'imperial' = 'metric';
 	let forecastContextReady = false;
-	let selectionMode: 'point' | 'route' = 'point';
+
 	let windyFavoritePlaces: { id: string; name: string; lat: number; lon: number }[] = [];
 	let windyFavoritesLoading = false;
 	let windyFavoritesStatus = '';
 	let windyFavoritesReadId = 0;
 	let lastFavoriteInterceptMs = 0;
-	let selectedPoint: RoutePoint | null = null;
-	let pointResultElement: HTMLDivElement | null = null;
-	let manualCoordinateText = '';
 	let routeCoordinateText = '';
 	let routePointNameText = '';
 	let routeCoordinateError = '';
 	let routeCoordinateStatus = '';
-	let coordinateProvenance = '';
-	let coordinateError = '';
-	let pointElevationM: number | null = null;
-	let pointElevationError = '';
-	let pointElevationLoading = false;
-	let manualPointElevationM: number | null = null;
-	let manualPointElevationError = '';
-	let pointProfile: WeatherProfile | null = null;
-	let pointProfileLoading = false;
-	let pointProfileError = '';
-	let pointProfileSummaryCopyStatus = '';
-	let pointProfileSummaryText = '';
-	let pointProfileSummaryTextarea: HTMLTextAreaElement | null = null;
-	let activePointProfileRun = 0;
-	let pointRequestController: AbortController | null = null;
-	let profileViewer: 'point' | 'route' | null = null;
+	let profileViewer: 'route' | null = null;
 	let profileViewerElement: HTMLDivElement | null = null;
 	let profileViewerCloseButton: HTMLButtonElement | null = null;
 	let profileViewerTrigger: HTMLElement | null = null;
@@ -487,13 +335,6 @@
 	let routePointerReadout: { sampleIndex: number; altitudeM: number } | null = null;
 	let routePointerFrame: number | null = null;
 	let pendingRoutePointer: { sampleIndex: number; altitudeM: number; dragging: boolean } | null = null;
-	let profileRangeStartM: number | null = null;
-	let profileRangeEndM: number | null = null;
-	let profileRangeStepM = 250;
-	let profileRangeStepError = '';
-	let multiAltitudeInput = '';
-	let multiAltitudeInputError = '';
-	let multiAltitudeHeightsM: number[] = [];
 	let routeWeatherSamples: RouteWeatherSample[] = [];
 	let routeWeatherTimesMs: number[] = [];
 	let routeWeatherLoading = false;
@@ -537,78 +378,21 @@
 	let activeTerrainRun = 0;
 	let terrainRequestController: AbortController | null = null;
 	let routeLayer: any = null;
-	const profileTrendMetrics = [
-		{ field: 'temperatureC', title: '温度', unit: '℃', color: WEATHER_COLORS.series.temperature, digits: 1 },
-		{ field: 'relativeHumidityPct', title: '相对湿度', unit: '%', color: WEATHER_COLORS.series.humidity, digits: 0 },
-		{ field: 'windSpeedMs', title: '风速', unit: '米/秒', color: WEATHER_COLORS.series.wind, digits: 1 },
-		{ field: 'cloudPct', title: '云量', unit: '%', color: WEATHER_COLORS.series.cloud, digits: 0 },
-	] as const;
 	$: builtRoute = buildRoute(routePoints);
 	$: routeDistanceM = builtRoute.length > 1 ? builtRoute.at(-1).distanceM : 0;
 	$: terrainSamplesByCoordinate = new Map(terrainSamples.map(point => [requestCoordinateKey(point), point]));
 	$: routeWeatherGridCount = routeSamplingMode === 'spacing' ? Math.min(61, Math.max(2, Math.ceil(routeDistanceM / routeWeatherSpacingM) + 1)) : analysisCount;
 	$: routeWeatherGridSpacingM = routeDistanceM / Math.max(1, routeWeatherGridCount - 1);
 	$: analysisPoints = buildAnalysisPoints(routePoints, routeWeatherGridCount);
-	$: profileTimeOptions = selectionMode === 'point' ? pointProfile?.timestampsMs ?? [] : routeWeatherTimesMs;
+	$: profileTimeOptions = routeWeatherTimesMs;
 	$: profileTimeIndex = closestTimeIndex(profileTimeOptions, selectedForecastTimestampMs ?? windyTimestampMs ?? Date.now());
 	$: effectiveForecastTimestampMs = profileTimeIndex >= 0 ? profileTimeOptions[profileTimeIndex] : null;
-	$: viewerSourceProfile = profileViewer === 'point' ? pointProfile
-		: focusedRouteSample?.profile?.ok ? focusedRouteSample.profile
+	$: viewerSourceProfile = focusedRouteSample?.profile?.ok ? focusedRouteSample.profile
 			: routeWeatherSamples.find(sample => sample.profile?.ok)?.profile ?? null;
 	$: viewerProvenance = profileProvenance(viewerSourceProfile);
 	$: actualForecastIntervalHours = forecastIntervalHours(viewerSourceProfile?.timestampsMs ?? profileTimeOptions, effectiveForecastTimestampMs ?? Number.NaN);
 	$: precipitationIntervalLabel = actualForecastIntervalHours === null ? '未知有效时段'
 		: `${formatValue(actualForecastIntervalHours, Number.isInteger(actualForecastIntervalHours) ? 0 : 1, '')} 小时`;
-	$: activePointFrame = frameAtTimestamp(pointProfile?.frames, effectiveForecastTimestampMs);
-	$: pointGroundFog = activePointFrame ? assessGroundFog(pointProfile, effectiveForecastTimestampMs ?? activePointFrame.timestampMs) : null;
-	$: resolvedPointTerrain = resolveTerrainElevation(pointElevationM, pointProfile?.modelElevationM ?? null, manualPointElevationM);
-	$: pointTerrainM = resolvedPointTerrain.heightM;
-	$: pointTerrainSource = resolvedPointTerrain.source === 'manual' ? '手动校正海拔' : resolvedPointTerrain.source === 'windy' ? 'Windy 地形接口' : '模式地形';
-	$: pointChartGeometry = buildVerticalChartPoints(levelsIncludingModelSurface(activePointFrame), pointTerrainM, 9_000, 360, 270);
-	$: pointChartModelLevels = activePointFrame?.levels.filter(level => level.heightM >= 0 && level.heightM <= 9_000) ?? [];
-	$: pointChartGroundLevels = pointChartModelLevels.filter(level => !Number.isFinite(pointTerrainM) || level.heightM >= pointTerrainM);
-	$: pointCloudDetectionMaxM = Math.max(9_000, Math.min(20_000, ...(activePointFrame?.levels.map(level => level.heightM).filter(Number.isFinite) ?? [9_000])));
-	$: pointHumidityBands = humidityCloudBands(activePointFrame, pointTerrainM, pointCloudDetectionMaxM);
-	$: pointDirectCloudBands = directCloudLayerBands(activePointFrame, pointTerrainM);
-	$: pointTargetAltitudeMsl = Number(targetAltitudeM);
-	$: targetHeightResult = activePointFrame ? interpolateAtHeight(activePointFrame, pointTargetAltitudeMsl, pointTerrainM) : null;
-	$: pointGroundLevels = activePointFrame?.levels.filter(level => !Number.isFinite(pointTerrainM) || level.heightM >= pointTerrainM) ?? [];
-	$: pointNearestUsableLevel = nearestUsableProfileLevel(levelsIncludingModelSurface(activePointFrame), pointTargetAltitudeMsl, pointTerrainM, 9_000);
-	$: pointTargetInPossibleCloud = pointHumidityBands.find(band => pointTargetAltitudeMsl !== null && pointTargetAltitudeMsl >= band.lowHeightM && pointTargetAltitudeMsl <= band.highHeightM) ?? null;
-	$: pointCloudAssessment = assessCloudAtHeight(targetHeightResult, pointHumidityBands, pointTargetAltitudeMsl, activePointFrame?.cloudBaseM, unitSystem);
-	$: pointPotentialIcingLevels = potentialIcingLevels(activePointFrame, pointTerrainM);
-	$: pointFreezingLevels = freezingLevelCrossings(activePointFrame, pointTerrainM, 9_000);
-	$: pointHasGroupedClouds = [activePointFrame?.lowCloudPct, activePointFrame?.mediumCloudPct, activePointFrame?.highCloudPct].some(value => Number.isFinite(value));
-	$: pointCoverageMinM = pointGroundLevels.length ? Math.min(...pointGroundLevels.map(level => level.heightM)) : 0;
-	$: pointCoverageMaxM = pointGroundLevels.length ? Math.max(...pointGroundLevels.map(level => level.heightM)) : 0;
-	$: profileRangeStartDefaultM = pointGroundLevels.length ? Math.ceil(pointCoverageMinM / 250) * 250 : 0;
-	$: profileRangeEndDefaultM = pointGroundLevels.length ? Math.min(9_000, Math.floor(pointCoverageMaxM / 250) * 250) : 0;
-	$: profileRangeStartValueM = profileRangeStartM ?? profileRangeStartDefaultM;
-	$: profileRangeEndValueM = profileRangeEndM ?? profileRangeEndDefaultM;
-	$: profileRangeValid = profileRangeStartValueM <= profileRangeEndValueM;
-	$: profileRangeRows = activePointFrame && pointGroundLevels.length && profileRangeValid ? sampleAltitudeRange(profileRangeStartValueM, profileRangeEndValueM, profileRangeStepM).map(heightM => ({ heightM, values: interpolateAtHeight(activePointFrame, heightM, pointTerrainM) })) : [];
-	$: pointHasLevelsAboveChart = Boolean(activePointFrame?.levels.some(level => level.heightM > 9_000));
-	$: pointTrendCharts = profileTrendMetrics.map(metric => ({
-		...metric,
-		geometry: buildAltitudeTrend(levelsIncludingModelSurface(activePointFrame), metric.field, pointTerrainM, 9_000, trendChartWidth, 320),
-	}));
-	$: pointTrendStatus = pointTrendCharts.some(({ geometry }) => geometry?.segments.some(segment => segment.length >= 2)) ? '' : (() => {
-		const counts = pointTrendCharts.map(({ title, geometry }) => `${title} ${geometry?.points.length ?? 0} 层`).join('，');
-		const terrainInfo = Number.isFinite(pointTerrainM)
-			? `气压高度层共 ${pointChartModelLevels.length} 层，地形以上 ${pointChartGroundLevels.length} 层、地形以下 ${pointChartModelLevels.length - pointChartGroundLevels.length} 层。`
-			: `当前无法确认地形高度；气压高度层共 ${pointChartModelLevels.length} 层。`;
-		const surfaceInfo = activePointFrame?.surfaceLevel
-			? `另有模式地形 ${formatHeight(Number(pointProfile?.modelElevationM), 0, unitSystem)} 处的近地面温度或风值；它不提供垂直湿度和云量。`
-			: '';
-		const queryInfo = targetHeightResult?.reason === 'below-terrain'
-			? `查询海拔 ${formatHeight(pointTargetAltitudeMsl ?? Number.NaN, 0, unitSystem)}低于地形 ${formatHeight(Number(pointTerrainM), 0, unitSystem)}，因此该高度没有有效天气值；将图中查询线拖到地形以上的有效高度层，才能读取对应数值。`
-			: '';
-		return `${terrainInfo}${surfaceInfo}${queryInfo}各变量地形以上的有效值：${counts}。少于两个相邻有效值，或中间有缺测／层间断档时不连线；不补造或外推。`;
-	})();
-	$: multiAltitudeRows = activePointFrame ? multiAltitudeHeightsM.map(heightM => ({
-		heightM,
-		values: interpolateAtHeight(activePointFrame, heightM, pointTerrainM),
-	})) : [];
 	$: routeEstimatedCoverage = routeContinuousClouds && (routeDisplayVariable === 'cloud' || routeDisplayVariable === 'thickness');
 	$: crossSectionGeometry = buildCrossSectionGeometry(routeWeatherSamples, effectiveForecastTimestampMs ?? Number.NaN, routeDisplayVariable, 9_000, routeChartWidth, routeChartHeight, routeEstimatedCoverage ? 'nearest' : 'samples');
 	$: routeTerrainKey = JSON.stringify(routePoints.map(point => [point.lat, point.lon, point.elevationM]));
@@ -759,7 +543,10 @@
 			if ((error as Error)?.name === 'AbortError' || isWindyRateLimit(error)) throw error;
 			currentError = error instanceof Error ? error.message : String(error);
 		}
-		if (hasTrendableVerticalProfile(currentProfile) && modelMatchesSelection(currentProfile, model)) return currentProfile;
+		const currentTrendable = hasTrendableVerticalProfile(currentProfile) && currentProfile && modelMatchesSelection(currentProfile, model);
+		const hasCloudAndHumidity = currentProfile?.frames.some(frame => frame.levels.some(level => Number.isFinite(level.cloudPct)))
+			&& currentProfile?.frames.some(frame => frame.levels.some(level => Number.isFinite(level.relativeHumidityPct)));
+		if (currentTrendable && hasCloudAndHumidity) return currentProfile;
 		abortIfNeeded(signal);
 
 		try {
@@ -779,17 +566,20 @@
 				};
 			}
 			if (hasTrendableVerticalProfile(legacyProfile) && modelMatchesSelection(legacyProfile, model)) {
+				const primary = currentTrendable ? currentProfile : legacyProfile;
+				const secondary = currentTrendable ? legacyProfile : currentProfile;
+				const combined = mergeCompatibleProfileFields(primary, secondary);
 				return {
-					...legacyProfile,
-					diagnosticAlternates: currentProfile ? [currentProfile] : [],
-					verticalDataNotice: '数据来自 Windy 保留的旧版兼容接口（官方已标记弃用）；这里只使用接口返回的真实位势高度，至少有两个相邻有效层时才画线，不补造或外推。',
+					...combined,
+					diagnosticAlternates: secondary ? [secondary] : [],
+					verticalDataNotice: `${currentTrendable ? '新版温度或风等字段可用，但逐层云量或湿度不完整，已检查旧版兼容接口。' : '使用 Windy 保留的旧版兼容接口（官方已标记弃用）。'}仅同模式、同起报、同时间和同高度的数据可补充；其余保留缺测，不补造或外推。`,
 				};
 			}
 			const retained = currentProfile && modelMatchesSelection(currentProfile, model) ? currentProfile : legacyProfile;
 			const currentReason = currentError ? `新版接口读取失败：${currentError}。`
 				: currentProfile?.servedModelSource === 'response' && !modelMatchesSelection(currentProfile, model)
 					? `新版接口明确返回 ${currentProfile.servedModel}，与请求的 ${model.toUpperCase()} 不同；该响应已丢弃。`
-					: currentProfile?.hasVerticalLayers ? '新版接口返回的有效高度层不足以形成趋势线。' : '新版接口没有返回垂直高度层。';
+					: currentTrendable ? '新版已有可用高度层，但逐层云量或湿度不完整。' : currentProfile?.hasVerticalLayers ? '新版接口返回的有效高度层不足以形成趋势线。' : '新版接口没有返回垂直高度层。';
 			return {
 				...retained,
 				diagnosticAlternates: [currentProfile, legacyProfile].filter((profile): profile is WeatherProfile => Boolean(profile && profile !== retained)),
@@ -799,7 +589,7 @@
 		} catch (error) {
 			if ((error as Error)?.name === 'AbortError' || isWindyRateLimit(error)) throw error;
 			const fallbackReason = error instanceof Error ? error.message : String(error);
-			if (currentProfile && modelMatchesSelection(currentProfile, model)) return { ...currentProfile, verticalDataNotice: `${currentProfile.hasVerticalLayers ? '新版接口返回的高度层不足以连线' : '新版接口没有返回垂直高度层'}；Windy 旧版兼容接口（官方标记弃用）读取失败：${fallbackReason}` };
+			if (currentProfile && modelMatchesSelection(currentProfile, model)) return { ...currentProfile, verticalDataNotice: `${currentTrendable ? '新版已有可用高度层，但逐层云量或湿度不完整' : currentProfile.hasVerticalLayers ? '新版接口返回的高度层不足以连线' : '新版接口没有返回垂直高度层'}；Windy 旧版兼容接口（官方标记弃用）读取失败：${fallbackReason}` };
 			if (currentProfile?.servedModelSource === 'response' && !modelMatchesSelection(currentProfile, model)) {
 				return {
 					...currentProfile,
@@ -827,7 +617,7 @@
 		broadcast.emit('rqstOpen', 'menu');
 	}
 
-	function openProfileViewer(mode: 'point' | 'route', event?: MouseEvent, nativeFullscreen = true) {
+	function openProfileViewer(mode: 'route', event?: MouseEvent, nativeFullscreen = true) {
 		if (event?.currentTarget instanceof HTMLElement) profileViewerTrigger = event.currentTarget;
 		profileViewer = mode;
 		void tick().then(() => {
@@ -899,10 +689,6 @@
 		if (Date.now() - lastFavoriteInterceptMs < 250) return;
 		const coordinate = extractCoordinate(event);
 		if (!coordinate) return;
-		if (selectionMode === 'point') {
-			selectPoint({ id: `map-${Date.now()}`, name: '地图选点', ...coordinate }, 'Windy 地图坐标，按原值使用');
-			return;
-		}
 		appendRoutePoint(coordinate);
 	}
 
@@ -933,7 +719,7 @@
 		routeFavoriteStatus = `已添加 Windy 收藏「${event.detail.name}」，使用收藏原始 WGS-84 坐标`;
 	}
 	function altFavoriteAtEvent(event: MouseEvent) {
-		if (selectionMode !== 'route' || !event.altKey || event.button !== 0) return null;
+		if (!event.altKey || event.button !== 0) return null;
 		const container = map.getContainer();
 		if (!(event.target instanceof Node) || !container.contains(event.target)) return null;
 		const pixel = map.mouseEventToContainerPoint(event);
@@ -1018,92 +804,6 @@
 			: `已添加路线点，名称按路线顺序自动生成 · 经度 ${resolved.lon.toFixed(5)}°，纬度 ${resolved.lat.toFixed(5)}° WGS‑84`;
 	}
 
-	function useOviCoordinate() {
-		const resolved = resolveOviCoordinate(manualCoordinateText);
-		if (!resolved.ok) {
-			coordinateError = resolved.error;
-			return;
-		}
-		selectPoint({
-			id: `ovi-${Date.now()}`,
-			name: resolved.coordinateSystem === 'GCJ-02' ? '奥维坐标（已转换）' : '奥维坐标',
-			lat: resolved.lat,
-			lon: resolved.lon,
-		}, resolved.source);
-	}
-
-	function setSelectionMode(mode: 'point' | 'route') {
-		if (selectionMode === mode) return;
-		cancelUnifiedRouteAnalysis(false);
-		if (selectionMode === 'point') cancelPointProfile();
-		else {
-			cancelRouteProfile();
-			cancelTerrain();
-		}
-		selectionMode = mode;
-	}
-
-	function selectPoint(point: RoutePoint, provenance: string) {
-		resetPointWeather();
-		selectedPoint = point;
-		manualPointElevationM = Number.isFinite(point.elevationM) ? Number(point.elevationM) : null;
-		manualPointElevationError = '';
-		coordinateProvenance = provenance;
-		coordinateError = '';
-		pointElevationM = null;
-		pointElevationError = '';
-		pointElevationLoading = false;
-		profileRangeStartM = null;
-		profileRangeEndM = null;
-		if (forecastContextReady) void loadPointProfile();
-	}
-
-	async function handleFavoritePointSelect(event: CustomEvent) {
-		const place = event.detail;
-		selectPoint({ id: `favorite-${Date.now()}`, name: place.name, lat: place.lat, lon: place.lon, ...(Number.isFinite(place.elevationM) ? { elevationM: place.elevationM } : {}) }, '本机地点收藏');
-		await scrollToPointResult();
-	}
-
-	async function handleBuiltInPointSelect(event: CustomEvent) {
-		const place = event.detail;
-		selectPoint({ id: `builtin-${place.id}`, name: place.name, lat: place.lat, lon: place.lon, ...(Number.isFinite(place.elevationM) ? { elevationM: place.elevationM } : {}) }, '插件内置地点；奥维 GCJ‑02 坐标已转换为 Windy WGS‑84');
-		await scrollToPointResult();
-	}
-
-	async function scrollToPointResult() {
-		await tick();
-		pointResultElement?.scrollIntoView({
-			behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-			block: 'start',
-		});
-	}
-
-	function handleManualPointElevation(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const valueText = input.value.trim();
-		if (!valueText) {
-			manualPointElevationM = null;
-			manualPointElevationError = '';
-			return;
-		}
-		const elevationM = heightFromDisplay(Number(valueText), unitSystem);
-		if (!input.validity.valid || !Number.isFinite(elevationM) || elevationM < 0 || elevationM > 10_000) {
-			manualPointElevationError = '点位海拔超出允许范围';
-			return;
-		}
-		manualPointElevationM = elevationM;
-		manualPointElevationError = '';
-	}
-
-	function queryAtTerrainElevation() {
-		if (!Number.isFinite(pointTerrainM)) return;
-		targetAltitudeM = Math.round(Number(pointTerrainM));
-	}
-
-	function queryAtNearestProfileLevel() {
-		if (pointNearestUsableLevel) setTargetAltitudeFromMsl(pointNearestUsableLevel.heightM);
-	}
-
 	function queryAtNearestRouteProfileLevel() {
 		if (focusedRouteNearestUsableLevel) setTargetAltitudeFromMsl(focusedRouteNearestUsableLevel.heightM);
 	}
@@ -1111,11 +811,6 @@
 	function setTargetAltitudeFromMsl(heightM: number) {
 		if (!Number.isFinite(heightM)) return;
 		targetAltitudeM = heightM;
-	}
-
-	function clearManualPointElevation() {
-		manualPointElevationM = null;
-		manualPointElevationError = '';
 	}
 
 	function handleAnalysisCount(event: Event) {
@@ -1137,18 +832,14 @@
 		routeWeatherSpacingM = spacing;
 	}
 
-	function drawMapItems(mode: 'point' | 'route', waypoints: RoutePoint[], pointSelection: RoutePoint | null) {
+	function drawMapItems(waypoints: RoutePoint[]) {
 		if (!routeLayer) return;
 		routeLayer.clearLayers();
-		if (mode === 'route' && waypoints.length > 1) {
+		if (waypoints.length > 1) {
 			L.polyline(waypoints.map(point => [point.lat, point.lon]), { color: '#82d1d5', weight: 3, opacity: 0.92, dashArray: '7 6', interactive: false }).addTo(routeLayer);
 		}
-		const points = mode === 'route' ? waypoints : pointSelection ? [pointSelection] : [];
+		const points = waypoints;
 		points.forEach((point, index) => {
-			if (mode === 'point') {
-				L.circleMarker([point.lat, point.lon], { radius: 6, color: '#152630', weight: 2, fillColor: '#a4e3e1', fillOpacity: 1, interactive: false }).addTo(routeLayer);
-				return;
-			}
 			const endpoint = index === points.length - 1 && index > 0;
 			const color = endpoint ? '#9c481b' : '#22616c';
 			const badge = document.createElement('div');
@@ -1264,47 +955,8 @@
 		if (value !== null && value >= minimum && value <= 20_000) targetAltitudeM = value;
 	}
 
-	function handleProfileRangeChange(event: Event, edge: 'start' | 'end') {
-		const input = event.currentTarget as HTMLInputElement;
-		if (!input.value.trim()) return;
-		const value = heightFromDisplay(Number(input.value), unitSystem);
-		if (value === null) return;
-		if (edge === 'start') profileRangeStartM = Math.max(0, Math.min(9_000, value));
-		else profileRangeEndM = Math.max(0, Math.min(9_000, value));
-	}
-
-	function handleProfileRangeStepChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		if (!input.value.trim()) return;
-		const value = heightFromDisplay(Number(input.value), unitSystem);
-		if (value === null || value < 50 || value > 2_000) {
-			profileRangeStepError = `采样间隔请设为 50–${displayHeightNumber(2_000, 0, unitSystem)} ${heightUnit(unitSystem)}。`;
-			return;
-		}
-		profileRangeStepError = '';
-		profileRangeStepM = Math.round(value);
-	}
-
-	function handleMultiAltitudeInput(event: Event) {
-		multiAltitudeInput = (event.currentTarget as HTMLInputElement).value;
-		const parsed = parseAltitudeList(multiAltitudeInput, unitSystem);
-		multiAltitudeInputError = parsed.error;
-		multiAltitudeHeightsM = parsed.ok ? parsed.heightsM : [];
-	}
-
-	function clearMultiAltitudeInput() {
-		multiAltitudeInput = '';
-		multiAltitudeInputError = '';
-		multiAltitudeHeightsM = [];
-	}
-
 	function changeUnitSystem(system: 'metric' | 'imperial') {
 		if (unitSystem === system) return;
-		if (multiAltitudeHeightsM.length && !multiAltitudeInputError) {
-			multiAltitudeInput = multiAltitudeHeightsM
-				.map(heightM => displayHeightNumber(heightM, 1, system))
-				.join(', ');
-		}
 		unitSystem = system;
 	}
 
@@ -1554,13 +1206,9 @@
 		if (forecastStep === step) return;
 		if (effectiveForecastTimestampMs !== null) selectedForecastTimestampMs = effectiveForecastTimestampMs;
 		forecastStep = step;
-		// The interval is a shared setting. Clear both result sets so switching
-		// between point and route views cannot reveal data fetched at the old step.
-		resetPointWeather();
+		// Changing the interval invalidates the route results.
 		resetRouteWeather();
-		if (selectionMode === 'point' && selectedPoint) {
-			void loadPointProfile();
-		} else if (selectionMode === 'route' && routePoints.length >= 2) {
+		if (routePoints.length >= 2) {
 			void loadRouteProfile();
 		}
 	}
@@ -1590,16 +1238,6 @@
 		return `${direction < 0 ? '−' : '＋'}${value} 小时`;
 	}
 
-	function resetPointWeather() {
-		pointRequestController?.abort();
-		pointRequestController = null;
-		activePointProfileRun += 1;
-		pointProfileLoading = false;
-		pointElevationLoading = false;
-		pointProfile = null;
-		pointProfileError = '';
-	}
-
 	function resetRouteWeather() {
 		cancelUnifiedRouteAnalysis(false);
 		routeWeatherReadAt = 0;
@@ -1619,47 +1257,13 @@
 	function selectModel(model: ForecastModel) {
 		if (selectedModel === model) return;
 		selectedModel = model;
-		resetPointWeather();
 		resetRouteWeather();
-		if (selectionMode === 'point' && selectedPoint) void loadPointProfile();
-		else if (selectionMode === 'route' && routePoints.length >= 2) void loadRouteProfile();
-	}
-
-	async function copyPointDiagnosticSummary() {
-		if (!pointProfile && !pointProfileError) return;
-		pointProfileSummaryCopyStatus = '';
-		pointProfileSummaryText = '';
-		const profileForSummary = pointProfile ?? {
-			ok: false,
-			error: 'Windy 请求未返回可解析的天气剖面',
-			dataSource: 'windy-point-forecast-v3',
-			requestedModel: selectedModel,
-			servedModel: null,
-			servedModelSource: 'unknown',
-			frames: [],
-			timestampsMs: [],
-			responseArrays: {},
-		};
-		const timestampMs = effectiveForecastTimestampMs ?? selectedForecastTimestampMs ?? profileForSummary.timestampsMs?.[0] ?? null;
-		const summary = buildProfileDiagnosticSummary(profileForSummary, timestampMs, pointTerrainM);
-		if (await copyTextToClipboard(summary)) {
-			pointProfileSummaryCopyStatus = '数据摘要已复制（不含天气数值）';
-			return;
-		}
-		pointProfileSummaryText = summary;
-		pointProfileSummaryCopyStatus = '无法自动复制；可点击下方文本框全选后复制（不含天气数值）';
-		await tick();
-		selectDiagnosticSummary();
-	}
-
-	function selectDiagnosticSummary() {
-		pointProfileSummaryTextarea?.focus();
-		pointProfileSummaryTextarea?.select();
+		if (routePoints.length >= 2) void loadRouteProfile();
 	}
 
 	function routeDiagnosticStatus(sample: RouteWeatherSample) {
 		const profile = sample.profile ?? sample.diagnosticProfile;
-		if (sample.profile?.ok) return `垂直层 ${sample.profile.frames?.reduce((maximum, frame) => Math.max(maximum, frame.levels?.length ?? 0), 0) ?? 0} 层 · 可用时次 ${sample.profile.timestampsMs?.length ?? 0} 个`;
+		if (sample.profile?.ok) return `已解析垂直层 ${sample.profile.frames?.reduce((maximum, frame) => Math.max(maximum, frame.levels?.length ?? 0), 0) ?? 0} 层 · 可用时次 ${sample.profile.timestampsMs?.length ?? 0} 个`;
 		if (profile?.ok) return '仅有近地面天气值，没有可用垂直层';
 		if (profile) return '已收到响应，但未解析到可用天气值';
 		return sample.error ? '请求或响应解析失败，可复制摘要查看状态' : '尚无可诊断的天气响应';
@@ -1712,74 +1316,6 @@
 	function selectRouteDiagnosticSummary() {
 		routeDiagnosticSummaryTextarea?.focus();
 		routeDiagnosticSummaryTextarea?.select();
-	}
-
-	async function loadPointProfile() {
-		if (!selectedPoint || pointProfileLoading) return;
-		const runId = ++activePointProfileRun;
-		const requestController = new AbortController();
-		pointRequestController = requestController;
-		const point = { ...selectedPoint };
-		const model = selectedModel;
-		const step = forecastStep;
-		pointProfileLoading = true;
-		pointProfileError = '';
-		pointProfileSummaryCopyStatus = '';
-		pointProfileSummaryText = '';
-		pointProfile = null;
-		const needsElevation = pointElevationM === null && !Number.isFinite(manualPointElevationM);
-		pointElevationLoading = needsElevation;
-		if (needsElevation) pointElevationError = '';
-		const forecastTask = loadWeatherProfile(point, model, 'detail', step, requestController.signal)
-			.then(parsed => {
-				if (runId !== activePointProfileRun) return;
-				if (!parsed.ok) {
-					pointProfile = parsed;
-					pointProfileError = [parsed.error, parsed.verticalDataNotice].filter(Boolean).join('；');
-					return;
-				}
-				if (!parsed.servedModel || !modelMatchesSelection(parsed, model)) {
-					pointProfile = { ...parsed, ok: false };
-					pointProfileError = parsed.servedModel
-						? `已选择 ${model.toUpperCase()}，但 Windy 实际返回 ${parsed.servedModel}；为避免混用，未显示这组数据。`
-						: 'Windy 响应未说明实际模式；为避免混用，未显示这组数据。';
-					return;
-				}
-				pointProfile = parsed;
-				selectedForecastTimestampMs = nearestTimestamp(parsed.timestampsMs);
-			})
-			.catch(error => {
-				if (runId === activePointProfileRun) pointProfileError = error instanceof Error ? error.message : String(error);
-			})
-			.finally(() => {
-				if (runId === activePointProfileRun) pointProfileLoading = false;
-			});
-
-		const elevationTask = needsElevation
-			? withWindyRequestLimit(signal => getElevation(point.lat, point.lon, { abortSignal: signal }), elevationRequestKey(point), requestController.signal)
-				.then(payload => {
-					if (runId !== activePointProfileRun) return;
-					pointElevationM = payloadNumber(payload);
-					pointElevationError = pointElevationM === null ? 'Windy 未返回地形高度' : '';
-				})
-				.catch(error => {
-					if (runId === activePointProfileRun) pointElevationError = error instanceof Error ? error.message : String(error);
-				})
-				.finally(() => {
-					if (runId === activePointProfileRun) pointElevationLoading = false;
-				})
-			: Promise.resolve();
-
-		await Promise.all([forecastTask, elevationTask]);
-		if (pointRequestController === requestController) pointRequestController = null;
-	}
-
-	function cancelPointProfile() {
-		activePointProfileRun += 1;
-		pointRequestController?.abort();
-		pointRequestController = null;
-		pointProfileLoading = false;
-		pointElevationLoading = false;
 	}
 
 	function commonRouteTimes(samples: RouteWeatherSample[]) {
@@ -1905,7 +1441,7 @@
 				routeAnalysisStage = 'terrain';
 				await waitRouteAnalysisPhase(loadRouteTerrain(), controller.signal);
 			}
-			if (id !== routeAnalysisRunId || controller.signal.aborted || selectionMode !== 'route') return;
+			if (id !== routeAnalysisRunId || controller.signal.aborted) return;
 			routeAnalysisNotice = terrainError || routeWeatherError ? '分析完成，部分数据缺测；已保留有效结果。' : '分析完成。';
 			// Async completion loses browser fullscreen activation. The existing
 			// fixed viewport viewer still fills the Windy page without another click.
@@ -2023,12 +1559,9 @@
 		const lat = Number(record.lat);
 		const lon = Number(record.lon);
 		if (isValidCoordinate({ lat, lon })) {
-			selectionMode = 'point';
-			selectPoint({ id: 'url', name: 'Windy 地点', lat, lon }, 'Windy 地点坐标，按原值使用');
+			if (!routePoints.length) appendRoutePoint({ name: 'Windy 地点', lat, lon });
 		}
 	}
-
-	export const onopen = (params: unknown) => paramsFromUrl(params);
 
 	onMount(() => {
 		const timestamp = Number(store.get('timestamp'));
@@ -2036,12 +1569,11 @@
 		const product = store.get('product');
 		selectedModel = product === 'icon' ? 'icon' : 'ecmwf';
 		forecastContextReady = true;
-		if (selectedPoint) void loadPointProfile();
 		timestampListenerId = store.on('timestamp', value => {
 			const nextTimestamp = Number(value);
 			if (!Number.isFinite(nextTimestamp)) return;
 			windyTimestampMs = nextTimestamp;
-			const times = selectionMode === 'point' ? pointProfile?.timestampsMs ?? [] : routeWeatherTimesMs;
+			const times = routeWeatherTimesMs;
 			selectedForecastTimestampMs = times.length ? nearestTimestamp(times, nextTimestamp) : nextTimestamp;
 		});
 		productListenerId = store.on('product', value => selectModel(value === 'icon' ? 'icon' : 'ecmwf'));
@@ -2054,16 +1586,14 @@
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 	});
 
-	$: if (routeLayer) drawMapItems(selectionMode, routePoints, selectedPoint);
+	$: if (routeLayer) drawMapItems(routePoints);
 
 		onDestroy(() => {
 			cancelUnifiedRouteAnalysis(false);
 			resetRoutePointerInteraction();
-			pointRequestController?.abort();
 			routeWeatherRequestController?.abort();
 			terrainRequestController?.abort();
 			activeTerrainRun += 1;
-		activePointProfileRun += 1;
 		activeRouteWeatherRun += 1;
 		if (timestampListenerId !== null) store.off(timestampListenerId);
 		if (productListenerId !== null) store.off(productListenerId);

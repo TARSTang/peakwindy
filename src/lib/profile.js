@@ -44,7 +44,7 @@ function responseArrayDiagnostics(source, includeLegacyFields = false) {
 function profileBody(payload) {
 	if (!isRecord(payload)) return null;
 	const nested = payload.data;
-	if (isRecord(nested) && (isRecord(nested.data) || nested.meteogram || nested.airgram || nested.sounding)) return nested;
+	if (isRecord(nested) && (isRecord(nested.data) || nested.header || nested.meteogram || nested.airgram || nested.sounding)) return nested;
 	return payload;
 }
 
@@ -73,6 +73,10 @@ function sourceIndexAtTimestamp(source, timestampMs, fallbackIndex) {
 }
 
 export function parseWindyProfile(payload) {
+	const status = finiteOrNull(payload?.status);
+	if (status !== null && (status < 200 || status >= 300)) return {
+		ok: false, error: `Windy 点预报接口返回状态 ${status}`, frames: [], timestampsMs: [], modelElevationM: null,
+	};
 	const body = profileBody(payload);
 	if (!body) return { ok: false, error: 'Windy 响应为空', frames: [], timestampsMs: [], modelElevationM: null };
 
@@ -99,7 +103,8 @@ export function parseWindyProfile(payload) {
 	};
 	const modelElevationM = finiteOrNull(header.modelElevation, { min: -1_000, max: 10_000 })
 		?? finiteOrNull(header.elevation, { min: -1_000, max: 10_000 });
-	const rawTimes = data.ts ?? header.ts ?? sounding.ts ?? airgram.ts ?? meteogram.ts;
+	const rawTimes = [data.ts, header.ts, sounding.ts, airgram.ts, meteogram.ts]
+		.find(times => Array.isArray(times) && times.some(time => timestampToMilliseconds(time) !== null));
 	const normalizedTimes = Array.isArray(rawTimes) ? rawTimes.map(timestampToMilliseconds) : [];
 	const timeIndexes = Array.from({ length: normalizedTimes.length }, (_, index) => index)
 		.filter(index => normalizedTimes[index] !== null);
@@ -266,6 +271,35 @@ export function parseWindyProfile(payload) {
 		responseGroups,
 		responseArrays,
 	};
+}
+
+// Complement a fallback only at the same forecast time, pressure and actual
+// height. Never move fields to a different model run, height or surface.
+export function mergeCompatibleProfileFields(primary, secondary) {
+	if (!secondary?.ok || !primary?.ok) return primary;
+	if (!primary.referenceTime || !secondary.referenceTime || primary.referenceTime !== secondary.referenceTime) return primary;
+	if (!profileMatchesRequestedModel(secondary, primary.servedModel ?? primary.requestedModel)) return primary;
+	let supplemented = 0;
+	const fill = (target, other) => {
+		if (!target || !other || Math.abs(target.heightM - other.heightM) > 1) return target;
+		const next = { ...target };
+		for (const field of PROFILE_VALUE_FIELDS) {
+			if (!Number.isFinite(next[field]) && Number.isFinite(other[field])) {
+				next[field] = other[field]; supplemented++;
+			}
+		}
+		return next;
+	};
+	const frames = primary.frames.map(frame => {
+		const other = secondary.frames.find(candidate => candidate.timestampMs === frame.timestampMs);
+		if (!other) return frame;
+		return { ...frame,
+			levels: frame.levels.map(level => fill(level, other.levels.find(candidate => candidate.pressureHPa === level.pressureHPa))),
+			surfaceLevel: fill(frame.surfaceLevel, other.surfaceLevel),
+		};
+	});
+	return { ...primary, frames, hasDirectCloud: frames.some(frame => levelsIncludingModelSurface(frame).some(level => Number.isFinite(level.cloudPct))),
+		supplementedFieldCount: supplemented };
 }
 
 export function profileProvenance(profile) {
@@ -627,6 +661,22 @@ export function buildProfileDiagnosticSummary(profile, timestampMs, terrainEleva
 	});
 	if (sourceTimeAxes.length) lines.push('各字段组时间对齐：' + sourceTimeAxes.join('；'));
 	if (frame.timeAlignmentNotice) lines.push('时间轴警告：' + frame.timeAlignmentNotice);
+	if (profile.supplementedFieldCount) lines.push(`兼容接口补充：${profile.supplementedFieldCount} 个字段值，仅同模式、同起报（如返回）、同一时次、同气压层且实际高度相差不超过 1 米；原始响应形状分别列在下方。`);
+	for (const [label, prefix, parsedField] of [['云量', 'cloud', 'cloudPct'], ['相对湿度', 'rh', 'relativeHumidityPct']]) {
+		const arrays = Object.entries(profile.responseArrays ?? {}).flatMap(([source, entries]) =>
+			(entries ?? []).filter(item => new RegExp(`^${prefix}-\\d+h$`, 'i').test(item.key)).map(item => ({ ...item, source })));
+		const aligned = arrays.filter(item => frame.sourceTimeIndexes?.[item.source] !== null);
+		const validRaw = aligned.filter(item => item.validAtTime?.[frame.sourceTimeIndexes?.[item.source] ?? rawTimeIndex]);
+		const parsed = frame.levels.filter(level => Number.isFinite(level[parsedField]));
+		const above = parsed.filter(level => !Number.isFinite(terrainElevationM) || level.heightM >= terrainElevationM);
+		const reason = !arrays.length ? '响应没有返回逐层字段'
+			: !aligned.length ? '字段组没有当前预报时次'
+				: !validRaw.length && !parsed.length ? '当前时次字段为空、数组不足或值无效'
+					: !parsed.length ? '原始字段有值，但缺少可匹配的有效高度，或字段格式尚未支持；需核对响应字段摘要'
+						: !above.length ? '已解析的数据全部低于地形；不作为高空数据'
+							: '有地形以上数据；具体查询高度仍须有相邻有效层，不跨缺口或外推';
+		lines.push(`${label}缺测核查：${reason}（逐层字段 ${arrays.length} 组，当前原始有效 ${validRaw.length} 组，解析 ${parsed.length} 层，地形以上 ${above.length} 层）。`);
+	}
 
 	const levelFields = [
 		['高度', 'gh'],
@@ -1044,6 +1094,25 @@ export function interpolateAtHeight(frame, targetHeightM, terrainElevationM = nu
 		windDirectionDeg: wind.directionDeg,
 		methods: { temperature: temperature.method, dewPoint: dewPoint.method, humidity: humidity.method, cloud: cloud.method, wind: wind.method },
 	};
+}
+
+export function explainProfileQuery(frame, heightM, terrainM = null) {
+	if (!frame) return '当前预报时次没有天气响应';
+	if (!Number.isFinite(heightM)) return '查询海拔无效';
+	if (Number.isFinite(terrainM) && heightM < terrainM) return `查询海拔 ${Math.round(heightM)} 米低于地形 ${Math.round(terrainM)} 米；模式地下层不作为天气证据`;
+	const values = interpolateAtHeight(frame, heightM, terrainM);
+	return [['云量', 'cloudPct'], ['相对湿度', 'humidityPct']].map(([label, key]) => {
+		if (Number.isFinite(values[key])) return `${label}可用${values[key] === 0 ? '（零值）' : ''}`;
+		const field = key === 'humidityPct' ? 'relativeHumidityPct' : key;
+		const all = levelsIncludingModelSurface(frame).filter(level => Number.isFinite(level[field]));
+		const above = all.filter(level => !Number.isFinite(terrainM) || level.heightM >= terrainM);
+		if (!all.length) return `${label}：本时次未解析到有效值，详见逐点诊断`;
+		if (!above.length) return `${label}：已返回值全部低于地形`;
+		const minimum = Math.min(...above.map(level => level.heightM));
+		const maximum = Math.max(...above.map(level => level.heightM));
+		if (heightM < minimum || heightM > maximum) return `${label}：查询 ${Math.round(heightM)} 米超出地形以上有效范围 ${Math.round(minimum)}–${Math.round(maximum)} 米，不外推`;
+		return `${label}：相邻层缺测或层间断档，不跨缺口插值`;
+	}).join('；');
 }
 
 export function assessCloudAtHeight(result, bands, targetHeightM, directCloudBaseM = null, unitSystem = 'metric') {

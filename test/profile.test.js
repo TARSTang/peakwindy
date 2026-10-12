@@ -30,6 +30,8 @@ import {
 	nearestUsableProfileLevel,
 	humidityCloudBands,
 	parseWindyProfile,
+	mergeCompatibleProfileFields,
+	explainProfileQuery,
 	parseWindyLegacyProfile,
 	potentialIcingLevels,
 	profileProvenance,
@@ -333,7 +335,7 @@ test('diagnostics retain response field evidence when timestamps exist but no we
 
 test('diagnostics expose field names and shapes when the response has no usable forecast timestamps', () => {
 	const payload = makePayload();
-	payload.data.data.ts = [];
+	for (const group of ['data', 'header', 'sounding', 'airgram', 'meteogram']) payload.data[group].ts = [];
 	payload.data.header.availableLevels = ['850h', '700h', '500h'];
 	const profile = parseWindyProfile(payload);
 	assert.equal(profile.ok, false);
@@ -1357,4 +1359,55 @@ test('route thickness view retains direct cloud bands and RH estimates while lea
 	assert.equal(geometry.cells.every(cell => cell.missing), true);
 	const cloudGeometry = buildCrossSectionGeometry([sample], frame.timestampMs, 'cloud');
 	assert.equal(cloudGeometry.cells.some(cell => !cell.missing), true);
+});
+
+
+test('v3 empty primary time axis uses the returned sounding axis without borrowing ground values', () => {
+ const payload = makePayload(); payload.data.data.ts = [];
+ const profile = parseWindyProfile(payload);
+ assert.equal(profile.ok, true); assert.equal(profile.frames.length, 2);
+ assert.equal(profile.frames[0].surfaceLevel, null);
+ assert.equal(profile.frames[0].levels[1].relativeHumidityPct, 70);
+});
+
+test('non-success response cannot be parsed as weather', () => {
+ const payload = makePayload(); payload.status = 429;
+ const profile = parseWindyProfile(payload); assert.equal(profile.ok, false); assert.match(profile.error, /429/);
+});
+
+test('fallback supplementation requires the same run, model, time, pressure and height and preserves zero', () => {
+ const original = attachRequestedModel(parseWindyProfile(makePayload()), 'ecmwf');
+ const secondary = structuredClone(original); const primary = structuredClone(original);
+ primary.frames[0].levels[1].relativeHumidityPct = null;
+ primary.frames[0].levels[1].cloudPct = 0;
+ const merged = mergeCompatibleProfileFields(primary, secondary);
+ assert.equal(merged.frames[0].levels[1].relativeHumidityPct, 70);
+ assert.equal(merged.frames[0].levels[1].cloudPct, 0);
+ assert.equal(primary.frames[0].levels[1].relativeHumidityPct, null);
+ for (const change of [p => p.referenceTime = null, p => p.referenceTime = 'different', p => p.servedModel = 'icon', p => p.frames[0].timestampMs += 3600000, p => p.frames[0].levels[1].heightM += 2, p => p.frames[0].levels[1].pressureHPa = 699]) {
+  const incompatible = structuredClone(secondary); change(incompatible);
+  assert.equal(mergeCompatibleProfileFields(primary, incompatible).frames[0].levels[1].relativeHumidityPct, null);
+ }
+});
+
+test('diagnostics explain omitted variables and terrain filtering separately', () => {
+ const payload = makePayload();
+ for (const key of Object.keys(payload.data.sounding)) if (key.startsWith('rh-')) delete payload.data.sounding[key];
+ const profile = parseWindyProfile(payload);
+ const summary = buildProfileDiagnosticSummary(profile, profile.timestampsMs[0], 8000);
+ assert.match(summary, /相对湿度缺测核查：响应没有返回逐层字段/);
+ assert.match(summary, /云量缺测核查：已解析的数据全部低于地形/);
+});
+
+
+test('high summit query distinguishes returned layers from unbracketed height and below-ground values', () => {
+ const frame = { levels: [
+  { heightM: 5893, pressureHPa: 500, pressureLevelIndex: 0, cloudPct: 20, relativeHumidityPct: 85 },
+  { heightM: 7593, pressureHPa: 400, pressureLevelIndex: 1, cloudPct: 0, relativeHumidityPct: 70 },
+ ], surfaceLevel: null };
+ assert.match(explainProfileQuery(frame, 7510, 7508.9), /超出地形以上有效范围 7593–7593 米/);
+ assert.match(explainProfileQuery(frame, 4500, 7508.9), /低于地形/);
+ assert.match(explainProfileQuery(frame, 7593, 7508.9), /云量可用（零值）/);
+ assert.match(explainProfileQuery(frame, 6500, 4500), /相对湿度可用/);
+ assert.match(explainProfileQuery(null, 4500), /没有天气响应/);
 });

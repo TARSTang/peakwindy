@@ -1,5 +1,5 @@
 import { distanceMeters } from './route.js';
-import { frameAtTimestamp, interpolateAtHeight, humidityCloudBands, directCloudLayerBands } from './profile.js';
+import { frameAtTimestamp, interpolateAtHeight, humidityCloudBands, directCloudLayerBands, explainProfileQuery } from './profile.js';
 
 const R = 6371008.8;
 function heightInput(text, fallback) {
@@ -52,7 +52,7 @@ export function buildCloudSightline(points, samples, timestampMs, startText, tar
 		else if (humid) { kind = 'humid'; text = values.cloudPct === 0 ? '模式云量为 0%，但存在高湿信号，不能确认无云' : '存在高湿可能云区信号，不能确认实际有云'; }
 		else if (values.cloudPct === 0 && Number.isFinite(terrainM)) { kind = 'clear'; text = '该采样点视线高度模式云量为 0%；不保证实况可见'; }
 		else if (!Number.isFinite(terrainM)) text = '采样点地形高度缺测，无法确认该天气层在地表以上';
-		else if (values.reason === 'no-bracketing-levels') text = `Windy 未返回包围视线 ${Math.round(heightM)} 米的有效高度层，不能外推云量与湿度`;
+		else if (!Number.isFinite(values.cloudPct) || !Number.isFinite(values.humidityPct)) text = explainProfileQuery(frame, heightM, weatherGround);
 		return { index, name: sample.name, distanceM: sample.distanceM, heightM, values, kind, text,
 			x: geometry.x(sample.distanceM), y: geometry.y(heightM), visible: heightM >= 0 && heightM <= geometry.maxHeightM };
 	});
