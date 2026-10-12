@@ -35,18 +35,24 @@ export function buildCloudSightline(points, samples, timestampMs, startText, tar
 		const fraction = Math.max(0, Math.min(1, sample.distanceM / distanceM));
 		const heightM = at(fraction);
 		const frame = frameAtTimestamp(sample.profile?.frames, timestampMs);
-		const terrainM = ground(sample);
-		const values = interpolateAtHeight(frame, heightM, terrainM);
-		const band = directCloudLayerBands(frame, terrainM).some(item => heightM >= item.lowHeightM && heightM <= item.highHeightM);
-		const humid = values.humidityPct >= 90 || humidityCloudBands(frame, terrainM).some(item => heightM >= item.lowHeightM && heightM <= item.highHeightM);
+		// Endpoint corrections affect the endpoint only. Never move interior terrain.
+		const terrainM = index === 0 ? startGround : index === samples.length - 1 ? targetM : ground(sample);
+		// A corrected real elevation cannot turn the model's underground layers
+		// into atmospheric evidence. Keep that independent lower boundary.
+		const modelGround = sample.profile?.modelElevationM;
+		const weatherGround = Number.isFinite(modelGround) ? Math.max(terrainM ?? -Infinity, modelGround) : terrainM;
+		const values = interpolateAtHeight(frame, heightM, weatherGround);
+		const band = directCloudLayerBands(frame, weatherGround).some(item => heightM >= item.lowHeightM && heightM <= item.highHeightM);
+		const humid = values.humidityPct >= 90 || humidityCloudBands(frame, weatherGround).some(item => heightM >= item.lowHeightM && heightM <= item.highHeightM);
 		let kind = 'unknown', text = '该视线高度云量缺测';
 		if (!frame) text = '所选时次缺测';
-		else if (values.reason === 'below-terrain') text = '该高度低于采样地形，无有效高空天气；本功能不判断地形通视';
+		else if (values.reason === 'below-terrain') text = `视线 ${Math.round(heightM)} 米低于天气有效地表边界 ${Math.round(weatherGround)} 米（含模式地形），无有效高空天气；本功能不判断地形通视`;
 		else if (Number.isFinite(values.cloudPct) && values.cloudPct > 0) { kind = 'cloud'; text = `视线高度模式云量 ${Math.round(values.cloudPct)}%，存在云层相交信号`; }
 		else if (band) { kind = 'cloud'; text = '视线落在模式云层估算范围内；该高度云量可能缺测'; }
 		else if (humid) { kind = 'humid'; text = values.cloudPct === 0 ? '模式云量为 0%，但存在高湿信号，不能确认无云' : '存在高湿可能云区信号，不能确认实际有云'; }
 		else if (values.cloudPct === 0 && Number.isFinite(terrainM)) { kind = 'clear'; text = '该采样点视线高度模式云量为 0%；不保证实况可见'; }
 		else if (!Number.isFinite(terrainM)) text = '采样点地形高度缺测，无法确认该天气层在地表以上';
+		else if (values.reason === 'no-bracketing-levels') text = `Windy 未返回包围视线 ${Math.round(heightM)} 米的有效高度层，不能外推云量与湿度`;
 		return { index, name: sample.name, distanceM: sample.distanceM, heightM, values, kind, text,
 			x: geometry.x(sample.distanceM), y: geometry.y(heightM), visible: heightM >= 0 && heightM <= geometry.maxHeightM };
 	});
@@ -57,7 +63,13 @@ export function buildCloudSightline(points, samples, timestampMs, startText, tar
 		if (height < 0 || height > geometry.maxHeightM) { pen = false; continue; }
 		path += `${pen ? 'L' : 'M'}${geometry.x(distanceM * fraction).toFixed(2)},${geometry.y(height).toFixed(2)} `; pen = true;
 	}
-	return { ok: true, reason: '', distanceM, observerM, targetM, path, marks,
+	const correctionWarnings = [
+		Number.isFinite(ground(samples[0])) && Math.abs(startGround - ground(samples[0])) > 300 ? `机位「${points[0].name}」校正海拔 ${Math.round(startGround)} 米，与原采样地形 ${Math.round(ground(samples[0]))} 米相差较大，请核对路线顺序与坐标。` : '',
+		Number.isFinite(ground(samples.at(-1))) && Math.abs(targetM - ground(samples.at(-1))) > 300 ? `目标「${points[1].name}」校正海拔 ${Math.round(targetM)} 米，与原采样地形 ${Math.round(ground(samples.at(-1)))} 米相差较大，请核对坐标。` : ''
+	].filter(Boolean);
+	return { ok: true, reason: '', distanceM, observerM, targetM, path, marks, correctionWarnings,
+		observerName: points[0].name, targetName: points[1].name,
+		clearCount: marks.filter(mark => mark.kind === 'clear').length,
 		cloudCount: marks.filter(mark => mark.kind === 'cloud').length,
 		humidCount: marks.filter(mark => mark.kind === 'humid').length,
 		unknownCount: marks.filter(mark => mark.kind === 'unknown').length,

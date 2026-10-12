@@ -114,6 +114,8 @@
 			{#if routeCoordinateError}<p class="point-error" role="alert">{routeCoordinateError}</p>{/if}
 			{#if routeCoordinateStatus}<p class="load-status" role="status">{routeCoordinateStatus}</p>{/if}
 			<FavoritePlaces currentPlace={null} selectLabel="添加到路线" on:select={appendFavoriteRoutePoint} />
+			<p class="coordinate-format-note">Windy 地图爱心：电脑可用 Alt＋左键添加收藏的精确坐标；也可展开下方 Windy 收藏列表添加。</p>
+			<WindyFavoritePlaces places={windyFavoritePlaces} loading={windyFavoritesLoading} status={windyFavoritesStatus} on:refresh={loadWindyFavorites} on:select={appendWindyFavorite} />
 			<BuiltInPlaces selectLabel="添加到路线" on:select={appendBuiltInRoutePoint} />
 			{#if routePoints.length}
 				<ol class="waypoint-list">
@@ -129,16 +131,18 @@
 				<div class="route-summary-card">
 					<div><span>路线距离</span><strong>{formatDistance(routeDistanceM, 1, unitSystem)}</strong></div>
 					<div><span>地形数据</span><strong>{terrainSamples.filter(point => Number.isFinite(point.elevationM)).length} 个采样点</strong></div>
-					<button class="secondary-button" disabled={terrainLoading} on:click={loadRouteTerrain}>{terrainLoading ? `读取地形 ${terrainProgress}/${terrainTotal}` : terrainSamples.length ? '刷新地形' : '读取路线地形'}</button>
-					{#if terrainLoading}<button class="text-button" on:click={cancelTerrain}>取消</button>{/if}
+					{#if terrainTotal > 1}<small>地形网格约 {formatDistance(routeDistanceM / Math.max(1, terrainGridIntervals), 2, unitSystem)}；加密地形不提高天气分辨率。</small>{/if}
 				</div>
 				<div class="weather-section route-weather-section">
 					<div class="weather-section-heading"><div><p class="eyebrow">路线天气分析</p><h3>路线天气剖面</h3></div><span class="data-source-tag">请求 {selectedModel.toUpperCase()}</span></div>
 					<p class="section-copy">默认沿线约每 5 千米读取天气，起点、转折点和终点均保留。等距网格最多 61 点；长路线会增大间距。加密采样耗时更长，不提高天气模型本身的分辨率。</p>
 					<div class="weather-actions">
-						<button class="secondary-button" disabled={routeWeatherLoading || routePoints.length < 2} on:click={loadRouteProfile}>{routeWeatherLoading ? `读取路线天气 ${routeWeatherProgress}/${analysisPoints.length}` : routeWeatherSamples.length ? '刷新路线天气' : '读取路线天气'}</button>
-						{#if routeWeatherLoading}<button class="text-button" on:click={cancelRouteProfile}>取消</button>{/if}
+						<button class="secondary-button" disabled={routeAnalysisRunning || routePoints.length < 2} on:click={(event) => analyseAndViewRoute(event)}>{routeAnalysisRunning ? routeAnalysisStage === 'weather' ? `读取天气 ${routeWeatherProgress}/${analysisPoints.length}` : `读取地形 ${terrainProgress}/${terrainTotal}` : routeAnalysisReady ? '查看路线剖面' : '分析并查看路线剖面'}</button>
+						{#if routeAnalysisRunning || routeWeatherLoading || terrainLoading}<button class="text-button" on:click={() => cancelUnifiedRouteAnalysis()}>取消分析</button>{:else if routeWeatherTimesMs.length}<button class="text-button" on:click={(event) => analyseAndViewRoute(event, true)}>重新分析</button>{/if}
 					</div>
+					<p class="coordinate-format-note">一次操作读取路线天气与地形，完成后自动打开全屏剖面；已有近期完整结果时直接查看。</p>
+					{#if routeAnalysisNotice}<p class="load-status" role="status">{routeAnalysisNotice}</p>{/if}
+					{#if terrainError}<p class="inline-error" role="alert">{terrainError}</p>{/if}
 					{#if routeWeatherError}<p class="inline-error" role="alert">{routeWeatherError}</p>{/if}
 					{#if routeWeatherSamples.length}
 						<details class="route-diagnostic-details">
@@ -158,7 +162,7 @@
 						<div class="route-summary-card route-weather-summary">
 							<div><span>垂直数据</span><strong>{routeWeatherSamples.filter(sample => sample.profile?.hasVerticalLayers).length}/{routeWeatherSamples.length} 个点</strong></div>
 							<div><span>预报时刻</span><strong>{formatForecastTime(effectiveForecastTimestampMs ?? Date.now())}</strong></div>
-							<button class="secondary-button viewer-open-button" on:click={(event) => openProfileViewer('route', event)}>全屏查看路线剖面</button>
+							{#if !routeAnalysisRunning && !routeAnalysisReady}<button class="text-button" on:click={(event) => openProfileViewer('route', event)}>查看已读取的部分结果</button>{/if}
 						</div>
 					{/if}
 				</div>
@@ -404,6 +408,8 @@
 </div>
 
 <script lang="ts">
+	import WindyFavoritePlaces from './WindyFavoritePlaces.svelte';
+	import { normalizeWindyFavorites, favoriteAtMapPixel } from './lib/windy-favorites.js';
 	import CloudSightlinePanel from './CloudSightlinePanel.svelte';
 	import { buildCloudSightline } from './lib/cloud-sightline.js';
 	import { onDestroy, onMount, tick } from 'svelte';
@@ -438,6 +444,11 @@
 	let unitSystem: 'metric' | 'imperial' = 'metric';
 	let forecastContextReady = false;
 	let selectionMode: 'point' | 'route' = 'point';
+	let windyFavoritePlaces: { id: string; name: string; lat: number; lon: number }[] = [];
+	let windyFavoritesLoading = false;
+	let windyFavoritesStatus = '';
+	let windyFavoritesReadId = 0;
+	let lastFavoriteInterceptMs = 0;
 	let selectedPoint: RoutePoint | null = null;
 	let pointResultElement: HTMLDivElement | null = null;
 	let manualCoordinateText = '';
@@ -486,6 +497,14 @@
 	let routeWeatherSamples: RouteWeatherSample[] = [];
 	let routeWeatherTimesMs: number[] = [];
 	let routeWeatherLoading = false;
+	let routeAnalysisRunning = false;
+	let routeAnalysisStage: 'weather' | 'terrain' = 'weather';
+	let routeAnalysisNotice = '';
+	let routeAnalysisRunId = 0;
+	let routeAnalysisController: AbortController | null = null;
+	let routeWeatherReadAt = 0;
+	let terrainReadKey = '';
+	let terrainGridIntervals = 0;
 	let routeWeatherProgress = 0;
 	let routeWeatherError = '';
 	let routeDiagnosticSummaryCopyStatus = '';
@@ -592,6 +611,9 @@
 	})) : [];
 	$: routeEstimatedCoverage = routeContinuousClouds && (routeDisplayVariable === 'cloud' || routeDisplayVariable === 'thickness');
 	$: crossSectionGeometry = buildCrossSectionGeometry(routeWeatherSamples, effectiveForecastTimestampMs ?? Number.NaN, routeDisplayVariable, 9_000, routeChartWidth, routeChartHeight, routeEstimatedCoverage ? 'nearest' : 'samples');
+	$: routeTerrainKey = JSON.stringify(routePoints.map(point => [point.lat, point.lon, point.elevationM]));
+	$: routeAnalysisReady = routeWeatherTimesMs.length > 0 && routeWeatherReadAt > 0 && terrainReadKey === routeTerrainKey
+		&& !routeWeatherError && !terrainError && !routeWeatherLoading && !terrainLoading;
 	$: resetCloudSightlineEndpoints(JSON.stringify(routePoints.map(point => [point.id, point.lat, point.lon, point.elevationM])));
 	$: cloudSightline = cloudSightlineEnabled ? buildCloudSightline(routePoints, routeWeatherSamples, effectiveForecastTimestampMs,
 		cloudSightlineStartText, cloudSightlineTargetText, cloudSightlineEyeHeightM, crossSectionGeometry) : null;
@@ -805,13 +827,13 @@
 		broadcast.emit('rqstOpen', 'menu');
 	}
 
-	function openProfileViewer(mode: 'point' | 'route', event?: MouseEvent) {
+	function openProfileViewer(mode: 'point' | 'route', event?: MouseEvent, nativeFullscreen = true) {
 		if (event?.currentTarget instanceof HTMLElement) profileViewerTrigger = event.currentTarget;
 		profileViewer = mode;
 		void tick().then(() => {
 			profileViewerCloseButton?.focus();
 			const viewer = profileViewerElement;
-			if (profileViewer !== mode || !viewer || document.fullscreenElement || typeof viewer.requestFullscreen !== 'function') return;
+			if (!nativeFullscreen || profileViewer !== mode || !viewer || document.fullscreenElement || typeof viewer.requestFullscreen !== 'function') return;
 			void viewer.requestFullscreen().then(() => {
 				profileViewerEnteredFullscreen = true;
 			}).catch(() => {
@@ -874,6 +896,7 @@
 	}
 
 	function handleMapClick(event: unknown) {
+		if (Date.now() - lastFavoriteInterceptMs < 250) return;
 		const coordinate = extractCoordinate(event);
 		if (!coordinate) return;
 		if (selectionMode === 'point') {
@@ -881,6 +904,57 @@
 			return;
 		}
 		appendRoutePoint(coordinate);
+	}
+
+	async function loadWindyFavorites() {
+		if (windyFavoritesLoading) return;
+		const readId = ++windyFavoritesReadId;
+		windyFavoritesLoading = true; windyFavoritesStatus = '';
+		let timeoutId: ReturnType<typeof setTimeout>;
+		try {
+			const runtime = (globalThis as any).W;
+			const reader = typeof runtime?.userFavs?.getAll === 'function' ? runtime.userFavs : runtime?.idbInstances?.userFavsIdb;
+			if (typeof reader?.getAll !== 'function') throw new Error('当前 Windy 未开放收藏读取接口；可使用插件内置地点或输入精确坐标添加。');
+			const result = await Promise.race([reader.getAll(), new Promise((_, reject) => {
+				timeoutId = setTimeout(() => reject(new Error('读取 Windy 收藏超时，可稍后刷新')), 8000);
+			})]);
+			if (readId !== windyFavoritesReadId) return;
+			windyFavoritePlaces = normalizeWindyFavorites(result);
+			windyFavoritesStatus = windyFavoritePlaces.length ? '已读取精确坐标；添加路线不会修改 Windy 收藏。' : '当前 Windy 没有可用的地点收藏。';
+		} catch (failure) {
+			if (readId === windyFavoritesReadId) { windyFavoritePlaces = []; windyFavoritesStatus = (failure as Error).message; }
+		} finally {
+			clearTimeout(timeoutId!);
+			if (readId === windyFavoritesReadId) windyFavoritesLoading = false;
+		}
+	}
+	function appendWindyFavorite(event: CustomEvent) {
+		appendRoutePoint(event.detail);
+		routeFavoriteStatus = `已添加 Windy 收藏「${event.detail.name}」，使用收藏原始 WGS-84 坐标`;
+	}
+	function altFavoriteAtEvent(event: MouseEvent) {
+		if (selectionMode !== 'route' || !event.altKey || event.button !== 0) return null;
+		const container = map.getContainer();
+		if (!(event.target instanceof Node) || !container.contains(event.target)) return null;
+		const pixel = map.mouseEventToContainerPoint(event);
+		return favoriteAtMapPixel(windyFavoritePlaces, pixel, place => {
+			// Project the closest world copy for maps crossing the date line.
+			const center = map.getCenter().lng;
+			const lon = place.lon + Math.round((center - place.lon) / 360) * 360;
+			return map.latLngToContainerPoint([place.lat, lon]);
+		});
+	}
+	function captureAltFavoriteDown(event: MouseEvent) {
+		if (!altFavoriteAtEvent(event)) return;
+		event.preventDefault(); event.stopImmediatePropagation();
+	}
+	function captureAltFavoriteClick(event: MouseEvent) {
+		const place = altFavoriteAtEvent(event);
+		if (!place) return;
+		event.preventDefault(); event.stopImmediatePropagation();
+		lastFavoriteInterceptMs = Date.now();
+		appendRoutePoint(place);
+		routeFavoriteStatus = `已添加 Windy 收藏「${place.name}」，使用收藏原始 WGS-84 坐标`;
 	}
 
 	function handleWaypointNameChange(pointId: string, event: Event) {
@@ -960,6 +1034,7 @@
 
 	function setSelectionMode(mode: 'point' | 'route') {
 		if (selectionMode === mode) return;
+		cancelUnifiedRouteAnalysis(false);
 		if (selectionMode === 'point') cancelPointProfile();
 		else {
 			cancelRouteProfile();
@@ -1526,6 +1601,8 @@
 	}
 
 	function resetRouteWeather() {
+		cancelUnifiedRouteAnalysis(false);
+		routeWeatherReadAt = 0;
 		routeWeatherRequestController?.abort();
 		routeWeatherRequestController = null;
 		activeRouteWeatherRun += 1;
@@ -1763,6 +1840,7 @@
 			else if (!routeRateLimited) {
 				try {
 					terrainElevationM = payloadNumber(await withWindyRequestLimit(signal => getElevation(point.lat, point.lon, { abortSignal: signal }), elevationRequestKey(point), requestController.signal));
+					if (runId === activeRouteWeatherRun && Number.isFinite(terrainElevationM)) elevationCache.set(key, terrainElevationM);
 				} catch {
 					terrainElevationM = null;
 				}
@@ -1783,6 +1861,62 @@
 		else selectedForecastTimestampMs = nearestTimestamp(routeWeatherTimesMs);
 		if (routeWeatherSamples.some(sample => !sample.profile?.ok) && !routeWeatherError) routeWeatherError = '部分路线点数据缺失；缺测位置已留空';
 		routeWeatherLoading = false;
+		routeWeatherReadAt = Date.now();
+	}
+
+	function cancelUnifiedRouteAnalysis(notify = true) {
+		const wasRunning = routeAnalysisRunning || routeWeatherLoading || terrainLoading;
+		routeAnalysisRunId++;
+		routeAnalysisController?.abort(); routeAnalysisController = null;
+		routeAnalysisRunning = false;
+		cancelRouteProfile(); cancelTerrain();
+		routeAnalysisNotice = notify && wasRunning ? '已取消分析；已完成数据保留，未完成位置仍为缺测。' : '';
+	}
+	async function waitRouteAnalysisPhase(task: Promise<void>, signal: AbortSignal) {
+		let timer: ReturnType<typeof setTimeout>;
+		let abort: () => void;
+		try {
+			await Promise.race([task, new Promise<never>((_, reject) => {
+				abort = () => reject(new Error('分析已取消'));
+				signal.addEventListener('abort', abort, { once: true });
+				if (signal.aborted) abort();
+				timer = setTimeout(() => reject(new Error('当前阶段超过 90 秒未完成，已停止等待；可查看已有数据或稍后重新分析。')), 90_000);
+			})]);
+		} finally { clearTimeout(timer!); signal.removeEventListener('abort', abort!); }
+	}
+	async function analyseAndViewRoute(event: MouseEvent, refresh = false) {
+		if (routeAnalysisRunning || routePoints.length < 2) return;
+		if (!refresh && routeAnalysisReady && Date.now() - routeWeatherReadAt < 5 * 60_000) {
+			openProfileViewer('route', event); return;
+		}
+		// Keep the trigger before awaiting; event.currentTarget becomes null later.
+		if (event.currentTarget instanceof HTMLElement) profileViewerTrigger = event.currentTarget;
+		cancelRouteProfile(); cancelTerrain();
+		const id = ++routeAnalysisRunId, controller = new AbortController();
+		routeAnalysisController = controller; routeAnalysisRunning = true;
+		routeAnalysisNotice = ''; routeAnalysisStage = 'weather';
+		try {
+			if (refresh || !routeWeatherReadAt || Date.now() - routeWeatherReadAt >= 5 * 60_000) {
+				await waitRouteAnalysisPhase(loadRouteProfile(), controller.signal);
+			}
+			if (id !== routeAnalysisRunId || controller.signal.aborted) return;
+			if (!routeWeatherTimesMs.length) { routeAnalysisNotice = '没有可用的共同天气时次，请检查数据提示后重新分析。'; return; }
+			if (refresh || terrainReadKey !== routeTerrainKey) {
+				routeAnalysisStage = 'terrain';
+				await waitRouteAnalysisPhase(loadRouteTerrain(), controller.signal);
+			}
+			if (id !== routeAnalysisRunId || controller.signal.aborted || selectionMode !== 'route') return;
+			routeAnalysisNotice = terrainError || routeWeatherError ? '分析完成，部分数据缺测；已保留有效结果。' : '分析完成。';
+			// Async completion loses browser fullscreen activation. The existing
+			// fixed viewport viewer still fills the Windy page without another click.
+			openProfileViewer('route', undefined, false);
+		} catch (failure) {
+			if (id !== routeAnalysisRunId || controller.signal.aborted) return;
+			cancelRouteProfile(); cancelTerrain();
+			routeAnalysisNotice = (failure as Error).message;
+		} finally {
+			if (id === routeAnalysisRunId) { routeAnalysisRunning = false; routeAnalysisController = null; }
+		}
 	}
 
 	function cancelRouteProfile() {
@@ -1825,20 +1959,26 @@
 		const runId = ++activeTerrainRun;
 		const requestController = new AbortController();
 		terrainRequestController = requestController;
-		const samples = samplePolyline(routePoints, 250);
+		const readKey = routeTerrainKey;
+		terrainReadKey = '';
+		// Bound automatic work on long routes while retaining exact waypoints.
+		const samples = samplePolyline(routePoints, Math.max(250, routeDistanceM / 800));
+		terrainGridIntervals = Math.max(1, Math.ceil(routeDistanceM / Math.max(250, routeDistanceM / 800)));
+		let terrainRateLimited = false;
 		terrainLoading = true;
 		terrainError = '';
-		terrainSamples = [];
+		terrainSamples = samples.map(point => ({ ...point, elevationM: null, elevationSource: null }));
 		terrainProgress = 0;
 		terrainTotal = samples.length;
 		for (let start = 0; start < samples.length; start += 200) {
 			if (runId !== activeTerrainRun) return;
 			const batch = samples.slice(start, start + 200);
-			const elevations = await mapWithConcurrency(batch, 3, async point => {
-				if (runId !== activeTerrainRun) return null;
+			await mapWithConcurrency(batch, 3, async (point, index) => {
+				if (runId !== activeTerrainRun || terrainRateLimited) return null;
 				const key = `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`;
 				const waypoint = routeWaypointAt(point);
 				if (Number.isFinite(waypoint?.elevationM)) {
+					terrainSamples = terrainSamples.map((sample, position) => position === start + index ? { ...point, elevationM: waypoint.elevationM, elevationSource: 'manual' } : sample);
 					terrainProgress += 1;
 					return { ...point, elevationM: waypoint.elevationM, elevationSource: 'manual' as const };
 				}
@@ -1846,23 +1986,28 @@
 					let elevationM = elevationCache.get(key);
 					if (elevationM === undefined) {
 						elevationM = payloadNumber(await withWindyRequestLimit(signal => getElevation(point.lat, point.lon, { abortSignal: signal }), elevationRequestKey(point), requestController.signal));
-						elevationCache.set(key, elevationM);
+						if (Number.isFinite(elevationM)) elevationCache.set(key, elevationM);
 					}
 					if (runId !== activeTerrainRun) return null;
+					terrainSamples = terrainSamples.map((sample, position) => position === start + index ? { ...point, elevationM, elevationSource: Number.isFinite(elevationM) ? 'windy' : null } : sample);
 					terrainProgress += 1;
 					return { ...point, elevationM, elevationSource: Number.isFinite(elevationM) ? 'windy' as const : null };
-				} catch {
+				} catch (failure) {
+					if (isWindyRateLimit(failure)) terrainRateLimited = true;
 					if (runId === activeTerrainRun) terrainProgress += 1;
 					return { ...point, elevationM: null, elevationSource: null };
 				}
-			}, () => runId !== activeTerrainRun);
+			}, () => runId !== activeTerrainRun || terrainRateLimited);
 			if (runId !== activeTerrainRun) return;
-			terrainSamples = [...terrainSamples, ...elevations.filter(Boolean)];
+			if (terrainRateLimited) break;
 		}
 		if (runId !== activeTerrainRun) return;
 		if (terrainRequestController === requestController) terrainRequestController = null;
 		terrainLoading = false;
-		if (terrainSamples.filter(point => Number.isFinite(point.elevationM)).length < 2) terrainError = '地形数据不足，无法绘制剖面';
+		terrainReadKey = readKey;
+		if (terrainRateLimited) terrainError = '地形请求达到 Windy 频率限制，已停止后续采样；已有数据保留，未读位置为缺测。';
+		else if (terrainSamples.filter(point => Number.isFinite(point.elevationM)).length < 2) terrainError = '地形数据不足，无法绘制剖面';
+		else if (terrainSamples.some(point => !Number.isFinite(point.elevationM))) terrainError = '部分路线地形缺测，缺口不连接、不补造地形。';
 	}
 
 	function cancelTerrain() {
@@ -1901,6 +2046,10 @@
 		});
 		productListenerId = store.on('product', value => selectModel(value === 'icon' ? 'icon' : 'ecmwf'));
 		singleclick.on(config.name, handleMapClick);
+		void loadWindyFavorites();
+		document.addEventListener('pointerdown', captureAltFavoriteDown, true);
+		document.addEventListener('mousedown', captureAltFavoriteDown, true);
+		document.addEventListener('click', captureAltFavoriteClick, true);
 		routeLayer = L.layerGroup().addTo(map);
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 	});
@@ -1908,6 +2057,7 @@
 	$: if (routeLayer) drawMapItems(selectionMode, routePoints, selectedPoint);
 
 		onDestroy(() => {
+			cancelUnifiedRouteAnalysis(false);
 			resetRoutePointerInteraction();
 			pointRequestController?.abort();
 			routeWeatherRequestController?.abort();
@@ -1918,6 +2068,10 @@
 		if (timestampListenerId !== null) store.off(timestampListenerId);
 		if (productListenerId !== null) store.off(productListenerId);
 		singleclick.off(config.name, handleMapClick);
+		windyFavoritesReadId++;
+		document.removeEventListener('pointerdown', captureAltFavoriteDown, true);
+		document.removeEventListener('mousedown', captureAltFavoriteDown, true);
+		document.removeEventListener('click', captureAltFavoriteClick, true);
 		if (routeLayer) {
 			routeLayer.remove();
 			routeLayer = null;
