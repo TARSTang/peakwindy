@@ -49,22 +49,45 @@ export function distanceMeters(a, b) {
 }
 
 export function interpolateGreatCircle(a, b, fraction) {
-	if (!isValidCoordinate(a) || !isValidCoordinate(b)) return null;
+	if (!isValidCoordinate(a) || !isValidCoordinate(b) || !Number.isFinite(fraction)) return null;
 	const f = clamp(fraction, 0, 1);
-	const lat1 = toRadians(a.lat);
-	const lon1 = toRadians(a.lon);
-	const lat2 = toRadians(b.lat);
-	const lon2 = toRadians(b.lon);
-	const delta = distanceMeters(a, b) / EARTH_RADIUS_M;
-	if (!Number.isFinite(delta) || delta < 1e-12) {
-		return { lat: a.lat, lon: a.lon };
+	if (f === 0) return { lat: a.lat, lon: a.lon };
+	if (f === 1) return { lat: b.lat, lon: b.lon };
+
+	const toVector = point => {
+		const latitude = toRadians(point.lat);
+		const longitude = toRadians(point.lon);
+		return [Math.cos(latitude) * Math.cos(longitude), Math.cos(latitude) * Math.sin(longitude), Math.sin(latitude)];
+	};
+	const vectorA = toVector(a);
+	const vectorB = toVector(b);
+	const dot = clamp(vectorA.reduce((sum, value, index) => sum + value * vectorB[index], 0), -1, 1);
+	const angle = Math.acos(dot);
+	if (angle < 1e-12) return { lat: a.lat, lon: a.lon };
+
+	// Express the arc as a rotation from A toward the tangent at A. This avoids
+	// dividing by sin(angle), which becomes singular for antipodal endpoints.
+	let tangent = vectorB.map((value, index) => value - dot * vectorA[index]);
+	let tangentLength = Math.hypot(...tangent);
+	if (tangentLength < 1e-12) {
+		// Exact antipodes have infinitely many valid great circles. Pick a stable,
+		// deterministic one by crossing A with its least-aligned coordinate axis.
+		const axisIndex = vectorA.reduce((best, value, index, values) =>
+			Math.abs(value) < Math.abs(values[best]) ? index : best, 0);
+		const axis = [0, 0, 0];
+		axis[axisIndex] = 1;
+		tangent = [
+			axis[1] * vectorA[2] - axis[2] * vectorA[1],
+			axis[2] * vectorA[0] - axis[0] * vectorA[2],
+			axis[0] * vectorA[1] - axis[1] * vectorA[0],
+		];
+		tangentLength = Math.hypot(...tangent);
 	}
-	const sinDelta = Math.sin(delta);
-	const weightA = Math.sin((1 - f) * delta) / sinDelta;
-	const weightB = Math.sin(f * delta) / sinDelta;
-	const x = weightA * Math.cos(lat1) * Math.cos(lon1) + weightB * Math.cos(lat2) * Math.cos(lon2);
-	const y = weightA * Math.cos(lat1) * Math.sin(lon1) + weightB * Math.cos(lat2) * Math.sin(lon2);
-	const z = weightA * Math.sin(lat1) + weightB * Math.sin(lat2);
+	tangent = tangent.map(value => value / tangentLength);
+	const arcAngle = angle * f;
+	const x = Math.cos(arcAngle) * vectorA[0] + Math.sin(arcAngle) * tangent[0];
+	const y = Math.cos(arcAngle) * vectorA[1] + Math.sin(arcAngle) * tangent[1];
+	const z = Math.cos(arcAngle) * vectorA[2] + Math.sin(arcAngle) * tangent[2];
 	return {
 		lat: Math.atan2(z, Math.sqrt(x * x + y * y)) * 180 / Math.PI,
 		lon: Math.atan2(y, x) * 180 / Math.PI,

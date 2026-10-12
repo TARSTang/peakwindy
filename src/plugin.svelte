@@ -1458,11 +1458,13 @@
 		if (forecastStep === step) return;
 		if (effectiveForecastTimestampMs !== null) selectedForecastTimestampMs = effectiveForecastTimestampMs;
 		forecastStep = step;
+		// The interval is a shared setting. Clear both result sets so switching
+		// between point and route views cannot reveal data fetched at the old step.
+		resetPointWeather();
+		resetRouteWeather();
 		if (selectionMode === 'point' && selectedPoint) {
-			resetPointWeather();
 			void loadPointProfile();
 		} else if (selectionMode === 'route' && routePoints.length >= 2) {
-			resetRouteWeather();
 			void loadRouteProfile();
 		}
 	}
