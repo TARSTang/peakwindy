@@ -1,7 +1,9 @@
 import { mkdir, copyFile } from 'node:fs/promises';
 import { rollup } from 'rollup';
+import { generateUserGuide } from './generate-user-guide.mjs';
 
 process.env.SERVE = 'false';
+await generateUserGuide();
 await mkdir(new URL('../dist/', import.meta.url), { recursive: true });
 const config = (await import('../rollup.config.js')).default;
 const { watch, ...buildConfig } = config;

@@ -2,9 +2,10 @@
 <div class="plugin-shell" style={WEATHER_COLOR_STYLE}>
 	<div class="plugin__mobile-header">高海拔天气剖面</div>
 	<section class="plugin__content">
-		<button type="button" class="plugin__title plugin__title--chevron-back back-button" on:click={closePlugin}>
+		<div class="title-row"><button type="button" class="plugin__title plugin__title--chevron-back back-button" on:click={closePlugin}>
 			高海拔天气剖面
 		</button>
+		<button type="button" class="guide-button" aria-haspopup="dialog" aria-expanded={guideOpen} on:click={(event)=>{guideTrigger=event.currentTarget;guideOpen=true;}}>使用说明</button></div>
 
 		<div class="intro-row">
 			<p class="eyebrow">山地天气 · 高空剖面</p>
@@ -294,7 +295,10 @@
 	{/if}
 </div>
 
+{#if guideOpen}<UserGuide version={config.version} trigger={guideTrigger} on:close={()=>guideOpen=false}/>{/if}
+
 <script lang="ts">
+	import UserGuide from './UserGuide.svelte';
 	import WindyFavoritePlaces from './WindyFavoritePlaces.svelte';
 	import { normalizeWindyFavorites, favoriteAtMapPixel } from './lib/windy-favorites.js';
 	import CloudSightlinePanel from './CloudSightlinePanel.svelte';
@@ -356,6 +360,8 @@
 	let routeCoordinateError = '';
 	let routeCoordinateStatus = '';
 	let profileViewer: 'route' | null = null;
+	let guideOpen = false;
+	let guideTrigger: HTMLButtonElement | null = null;
 	let profileViewerElement: HTMLDivElement | null = null;
 	let profileViewerCloseButton: HTMLButtonElement | null = null;
 	let profileViewerTrigger: HTMLElement | null = null;
@@ -701,6 +707,7 @@
 	}
 
 	function handleWindowKeydown(event: KeyboardEvent) {
+		if (guideOpen) return;
 		if (!profileViewer || !profileViewerElement) return;
 		if (event.key === 'Escape') {
 			event.preventDefault();
@@ -1785,6 +1792,11 @@
 	}
 	.plugin-shell .plugin__title { color: var(--profile-ink) !important; }
 	.back-button { display: block; width: 100%; border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
+	.title-row {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;}
+	.title-row .back-button {min-width:0;min-height:44px;margin:0;font-size:24px;line-height:1.4;}
+	.guide-button {min-height:44px;white-space:nowrap;border:1px solid #dfbdb5;border-radius:6px;padding:8px 10px;background:#fff;color:#a13b2e;font-size:14px;font-weight:700;cursor:pointer;}
+	.guide-button:hover {background:#fff4ef;}
+	@media(max-width:390px){.title-row{gap:6px;}.title-row .back-button{font-size:20px;}.guide-button{padding:8px;font-size:13px;}}
 	.plugin-shell :global(button:focus-visible),
 	.plugin-shell :global(summary:focus-visible) { outline: 3px solid #168b99; outline-offset: 2px; }
 	.plugin-shell :global(button:disabled) { cursor: wait; opacity: .62; }
