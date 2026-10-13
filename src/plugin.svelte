@@ -11,7 +11,15 @@
 			<span class="plugin-version" aria-label={`插件版本 ${config.version}`}>版本 {config.version}</span>
 		</div>
 
-		<div class="model-row" aria-label="预报模式和单位">
+		<div class="control-group" role="group" aria-label="天气数据来源">
+            <span class="control-label">天气来源</span>
+            <div class="segmented">
+              <button class:active={selectedProvider === 'windy'} aria-pressed={selectedProvider === 'windy'} on:click={() => selectProvider('windy')}>Windy</button>
+              <button class:active={selectedProvider === 'open-meteo'} aria-pressed={selectedProvider === 'open-meteo'} on:click={() => selectProvider('open-meteo')}>Open-Meteo</button>
+            </div>
+          </div>
+          <p class="coordinate-format-note">{selectedProvider === 'open-meteo' ? '天气：Open-Meteo（ECMWF IFS 0.25°／ICON Global）；地图与沿途地形仍来自 Windy。请求会发送分析点坐标，不发送 Windy 凭据。' : '天气：Windy。可选择用 Open-Meteo GFS 单独补充缺测参考。'}</p>
+          <div class="model-row" aria-label="预报模式和单位">
 			<div class="control-group model-control-group" role="group" aria-label="预报模式">
 				<span class="control-label">模式</span>
 				<div class="segmented">
@@ -74,13 +82,14 @@
 					{#if terrainTotal > 1}<small>地形网格约 {formatDistance(routeDistanceM / Math.max(1, terrainGridIntervals), 2, unitSystem)}；加密地形不提高天气分辨率。</small>{/if}
 				</div>
 				<div class="weather-section route-weather-section">
-					<div class="weather-section-heading"><div><p class="eyebrow">路线天气分析</p><h3>路线天气剖面</h3></div><span class="data-source-tag">请求 {selectedModel.toUpperCase()}</span></div>
+					<div class="weather-section-heading"><div><p class="eyebrow">路线天气分析</p><h3>路线天气剖面</h3></div><span class="data-source-tag">{weatherSourceLabel} · {selectedModel.toUpperCase()}</span></div>
 					<p class="section-copy">默认沿线约每 5 千米读取天气，起点、转折点和终点均保留。等距网格最多 61 点；长路线会增大间距。加密采样耗时更长，不提高天气模型本身的分辨率。</p>
+					{#if selectedProvider === 'windy'}<label class="coordinate-format-note"><input type="checkbox" bind:checked={externalSupplementEnabled} on:change={() => { cancelUnifiedRouteAnalysis(false); routeWeatherSamples = []; routeWeatherTimesMs = []; routeWeatherReadAt = 0; }} /> Windy 缺测时补查 Open-Meteo GFS（会发送路线分析点坐标）</label>{/if}
 					<div class="weather-actions">
 						<button class="secondary-button" disabled={routeAnalysisRunning || routePoints.length < 2} on:click={(event) => analyseAndViewRoute(event)}>{routeAnalysisRunning ? routeAnalysisStage === 'weather' ? `读取天气 ${routeWeatherProgress}/${analysisPoints.length}` : `读取地形 ${terrainProgress}/${terrainTotal}` : routeAnalysisReady ? '查看路线剖面' : '分析并查看路线剖面'}</button>
 						{#if routeAnalysisRunning || routeWeatherLoading || terrainLoading}<button class="text-button" on:click={() => cancelUnifiedRouteAnalysis()}>取消分析</button>{:else if routeWeatherTimesMs.length}<button class="text-button" on:click={(event) => analyseAndViewRoute(event, true)}>重新分析</button>{/if}
 					</div>
-					<p class="coordinate-format-note">一次操作读取路线天气与地形，完成后自动打开全屏剖面；已有近期完整结果时直接查看。</p>
+					<p class="coordinate-format-note">一次操作读取路线天气与地形，完成后自动打开全屏剖面。{selectedProvider === 'windy' ? 'Windy 缺测时可补查 GFS，结果单独显示。' : 'Open-Meteo 直接用于主剖面与视线，不调用 Windy 天气接口；ICON 最多请求 7 天，ECMWF 最多请求 15 天，覆盖以实际返回时次为准。'}</p>
 					{#if routeAnalysisNotice}<p class="load-status" role="status">{routeAnalysisNotice}</p>{/if}
 					{#if terrainError}<p class="inline-error" role="alert">{terrainError}</p>{/if}
 					{#if routeWeatherError}<p class="inline-error" role="alert">{routeWeatherError}</p>{/if}
@@ -109,7 +118,7 @@
 			{/if}
 
 
-		<p class="footer-note">剖面按 Windy 实际返回的高度层绘制；缺测不外推。</p>
+		<p class="footer-note">剖面按所选来源实际返回的高度层绘制；缺测不外推。</p>
 	</section>
 	{#if profileViewer}
 		<div bind:this={profileViewerElement} class="profile-viewer" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
@@ -123,14 +132,14 @@
 					<div class="viewer-time-controls">
 						<label><span class="sr-only">选择预报时刻</span><select value={effectiveForecastTimestampMs ?? ''} on:change={handleForecastTimeChange}>{#each profileTimeOptions as timestamp (timestamp)}<option value={timestamp}>{formatForecastTime(timestamp)} 北京时间</option>{/each}</select></label>
 						<div class="time-stepper"><button aria-label={`较早时刻 ${stepperText(-1)}`} disabled={profileTimeIndex <= 0} on:click={() => moveForecastTime(-1)}>{stepperText(-1)}</button><button aria-label={`较晚时刻 ${stepperText(1)}`} disabled={profileTimeIndex >= profileTimeOptions.length - 1} on:click={() => moveForecastTime(1)}>{stepperText(1)}</button></div>
-						<div class="forecast-step-choice" aria-label="预报请求间隔"><span>请求间隔</span><button class:active={forecastStep === 1} aria-pressed={forecastStep === 1} on:click={() => changeForecastStep(1)}>1 小时</button><button class:active={forecastStep === 3} aria-pressed={forecastStep === 3} on:click={() => changeForecastStep(3)}>3 小时</button></div>
+						{#if selectedProvider === 'windy'}<div class="forecast-step-choice" aria-label="预报请求间隔"><span>请求间隔</span><button class:active={forecastStep === 1} aria-pressed={forecastStep === 1} on:click={() => changeForecastStep(1)}>1 小时</button><button class:active={forecastStep === 3} aria-pressed={forecastStep === 3} on:click={() => changeForecastStep(3)}>3 小时</button></div>{/if}
 					</div>
 				</div>
 				<div class="viewer-provenance"><span>数据接口：{viewerProvenance.source}</span><span>模式：{viewerProvenance.model}</span><span>有效时间间隔：{precipitationIntervalLabel}</span><span>起报：{formatSourceTime(viewerSourceProfile?.referenceTime)}</span><span>更新：{formatSourceTime(viewerSourceProfile?.updateTime)}</span></div>
 				<p class="viewer-empty-note">新版接口请求范围：{requestedForecastDays} 天；{profileTimeOptions.length ? `${profileViewer === 'route' ? '路线共同' : '当前点'}返回时次：${formatForecastTime(profileTimeOptions[0])} 至 ${formatForecastTime(profileTimeOptions[profileTimeOptions.length - 1])}（北京时间），共 ${profileTimeOptions.length} 个时次。` : '尚无可用时次。'} 实际范围受模型与账号权限限制，各高度的有效层仍可能缺测。</p>
 
 				{#if profileViewer === 'route'}
-					<div class="viewer-stat-grid"><div><span>模式</span><strong>{selectedModel.toUpperCase()}</strong></div><div><span>有垂直数据</span><strong>{routeWeatherSamples.filter(sample => sample.profile?.hasVerticalLayers).length}/{routeWeatherSamples.length} 点</strong></div><div><span>路线距离</span><strong>{formatDistance(routeDistanceM, 1, unitSystem)}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div></div>
+					<div class="viewer-stat-grid"><div><span>来源／模式</span><strong>{weatherSourceLabel} · {selectedModel.toUpperCase()}</strong></div><div><span>有垂直数据</span><strong>{routeWeatherSamples.filter(sample => sample.profile?.hasVerticalLayers).length}/{routeWeatherSamples.length} 点</strong></div><div><span>路线距离</span><strong>{formatDistance(routeDistanceM, 1, unitSystem)}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div></div>
 					<div class="viewer-target-control"><label>查询高度<input type="number" min={displayHeightNumber(0, 0, unitSystem)} max={displayHeightNumber(20_000, 0, unitSystem)} step={unitSystem === 'metric' ? 50 : 100} value={displayHeightNumber(Number(targetAltitudeM), 1, unitSystem)} on:change={handleTargetAltitudeChange} aria-label={`查询高度，${'海拔'}，${heightUnit(unitSystem)}`} />{heightUnit(unitSystem)}</label><span>横轴：路线累计距离 · 纵轴：海拔</span></div>
 					<div class="route-nearest-level-slot"><button type="button" class="secondary-button" disabled={!focusedRouteNearestUsableLevel} on:click={queryAtNearestRouteProfileLevel}>{focusedRouteNearestUsableLevel ? `查看最近有效层 ${formatHeight(focusedRouteNearestUsableLevel.heightM, 0, unitSystem)}` : '该点暂无有效高度层'}</button></div>
 					<div class="altitude-presets route-altitude-presets" aria-label="常用查询高度">{#each ([3000, 4000, 5000, 6000, 7000, 8000, 9000]) as preset (preset)}<button class:active={Number(targetAltitudeM) === preset} aria-pressed={Number(targetAltitudeM) === preset} on:click={() => targetAltitudeM = preset}>{displayHeightNumber(preset, 0, unitSystem)} {heightUnit(unitSystem)}</button>{/each}</div>
@@ -140,13 +149,14 @@
 						<span>{routeMetricLabel} · {routeDisplayVariable === 'humidity' ? '色阶固定为 0–100%；90% 虚线是高湿参考，斜纹是湿度推算的可能云区，不代表实测云量。' : routeEstimatedCoverage ? '点间云区按最近采样点估算；竖线标出实际采样位置，缺测保留灰色，空白不代表无云。' : '窄色列表示实际天气分析点，列间未采样；空白不代表无云。'} 地形采样更密，不提高天气分辨率。</span>
 					</div>
 					{#if routeWeatherError}<p class="viewer-inline-error" role="alert">{routeWeatherError}</p>{/if}
+					{#if selectedProvider === 'open-meteo'}<p class="viewer-inline-error">Open-Meteo · {selectedModel === 'ecmwf' ? 'ECMWF IFS 0.25°' : 'ICON Global'}：气压层云量由 API 根据湿度推算，与湿度不是两项独立证据；完整云底和逐层能见度未提供。<a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo · CC BY 4.0</a></p>{/if}
 					{#if routeDisplayVariable === 'cloud'}
 						<div class="viewer-chart-legend" aria-label="模式云量颜色说明"><strong>模式云量</strong>{#each cloudLegendSteps as step (step.label)}<span><i class:legend-clear={step.clear} style={step.clear ? undefined : `background:${step.color}`}></i>{step.label}</span>{/each}<span><i class="legend-hatch"></i>紫斜纹：湿度推算可能云区</span><span><i class="legend-missing"></i>灰斜纹：缺测</span></div>
 					{:else if routeDisplayVariable === 'thickness'}
 						<div class="viewer-chart-legend" aria-label="云层厚度估算图例"><strong>厚度颜色</strong>{#each cloudThicknessLegendSteps as step (step.label)}<span><i style={`background:${step.color}`}></i>{step.label}</span>{/each}<span><i class="legend-hatch"></i>紫斜纹：相对湿度≥90%的可能云区</span><span><i class="legend-missing"></i>灰斜纹：模式云带边界不完整</span><span>云带边界按相邻模式层中点估算</span></div>
 					{:else}<div class="viewer-chart-legend" aria-label="当前变量色阶说明"><strong>{routeMetricLabel}</strong>{#each routeLegendSteps as step (step.label)}<span><i style={`background:${step.color}`}></i>{step.label}</span>{/each}<span><i class="legend-missing"></i>灰色：缺测</span>{#if routeDisplayVariable === 'humidity'}<span><i class="legend-hatch"></i>≥90%：可能云区信号，不等于实测云</span>{:else}<span><i class="legend-hatch"></i>斜纹：湿度推算可能云区</span>{/if}</div>{/if}
 					<section class="route-point-readout" aria-label="路线点具体天气数值">
-	<div class="route-readout-heading"><strong>{routePointerReadout ? '指向位置 · 最近采样点' : '查询线 · 已选采样点'}：{routeReadoutSample?.name ?? '尚未选点'}</strong><span>沿线 {formatDistance(routeReadoutSample?.distanceM, 1, unitSystem)} · {selectedModel.toUpperCase()} · {effectiveForecastTimestampMs ? formatForecastTime(effectiveForecastTimestampMs) : '暂无时次'}</span></div>
+	<div class="route-readout-heading"><strong>{routePointerReadout ? '指向位置 · 最近采样点' : '查询线 · 已选采样点'}：{routeReadoutSample?.name ?? '尚未选点'}</strong><span>沿线 {formatDistance(routeReadoutSample?.distanceM, 1, unitSystem)} · {weatherSourceLabel} {selectedModel.toUpperCase()} · {effectiveForecastTimestampMs ? formatForecastTime(effectiveForecastTimestampMs) : '暂无时次'}</span></div>
 	<div class="route-readout-values">
 		<div><span>查看海拔</span><strong>{formatHeight(routeReadoutAltitudeM, 0, unitSystem)}</strong><small>{routePointerReadout && activeRouteAltitudePointerId === null ? '悬停高度；绿线未改变' : '绿色查询线高度'}</small></div>
 		<div><span>该点地形</span><strong>{formatHeight(routeReadoutTerrainM, 0, unitSystem)}</strong><small>{routeReadoutSample?.terrainSource === 'manual' ? '手动校正海拔' : Number.isFinite(routeReadoutSample?.terrainElevationM) ? 'Windy 地形' : '模式地形或缺测'}</small></div>
@@ -157,7 +167,7 @@
 	</div>
 	<p title={routeReadoutNotice}>{routeReadoutNotice}</p>
 </section>
-<CloudSightlinePanel bind:enabled={cloudSightlineEnabled} bind:startText={cloudSightlineStartText} bind:targetText={cloudSightlineTargetText} bind:eyeHeightM={cloudSightlineEyeHeightM} analysis={cloudSightline} {unitSystem} selectedIndex={routeFocusedIndex} on:select={(event) => selectRouteSample(event.detail)} />
+<CloudSightlinePanel bind:enabled={cloudSightlineEnabled} bind:startText={cloudSightlineStartText} bind:targetText={cloudSightlineTargetText} bind:eyeHeightM={cloudSightlineEyeHeightM} analysis={cloudSightline} sourceLabel={weatherSourceLabel} externalEvidence={externalSightlineEvidence} {unitSystem} selectedIndex={routeFocusedIndex} on:select={(event) => selectRouteSample(event.detail)} />
 <div class="route-viewer-chart" use:observeRouteChartWidth><svg viewBox={`0 0 ${crossSectionGeometry.width} ${crossSectionGeometry.height}`} preserveAspectRatio="none" role="group" aria-label="路线距离与海拔天气剖面；可选择各天气采样点" on:pointermove={hoverRouteChart} on:pointerleave={clearRoutePointerReadout}><defs><pattern id="viewer-route-rh-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#592568" fill-opacity=".42"/><line x1="0" y1="0" x2="0" y2="7" stroke="#e879f9" stroke-width="2" stroke-opacity="1"/></pattern><pattern id="viewer-route-incomplete-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#626d80" fill-opacity=".36"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aab4c4" stroke-width="2" stroke-opacity=".96"/></pattern><marker id="viewer-wind-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#ffd166"/></marker></defs><text x={crossSectionGeometry.plot.left} y={crossSectionGeometry.plot.top - 14} class="viewer-axis-title">海拔（{heightUnit(unitSystem)}）</text>{#each profileAltitudeTicks as tick (tick)}<line x1={crossSectionGeometry.plot.left} x2={crossSectionGeometry.plot.right} y1={crossSectionGeometry.y(tick)} y2={crossSectionGeometry.y(tick)} class="viewer-grid-line"/><text x={crossSectionGeometry.plot.left - 10} y={crossSectionGeometry.y(tick) + 5} text-anchor="end" class="viewer-axis-label">{displayHeightNumber(tick, 0, unitSystem)}</text>{/each}{#each crossSectionGeometry.cells as cell (`viewer-${cell.sampleIndex}-${cell.pressureHPa ?? 'missing'}-${cell.y}`)}<rect x={cell.x} y={cell.y} width={cell.width} height={cell.height} fill={cell.missing ? 'url(#viewer-route-incomplete-hatch)' : crossSectionColor(cell.value, routeDisplayVariable)} opacity={cell.missing ? 1 : .94} stroke={cell.missing ? '#aab4c4' : '#0b1122'} stroke-width="1" stroke-dasharray={cell.missing ? '3 3' : undefined}><title>{routeCellTitle(cell, unitSystem)}</title></rect>{/each}{#each crossSectionGeometry.directCloudBands as band (`viewer-model-cloud-${band.sampleIndex}-${band.band.lowHeightM}`)}{#if routeDisplayVariable === 'thickness'}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM)} opacity=".92" stroke={band.band.thicknessM === null ? '#c1c9d4' : '#f2f5fb'} stroke-dasharray={band.band.thicknessM === null ? '2 3' : undefined}><title>{directCloudBandTitle(band.band, unitSystem)}</title></rect>{/if}{#if routeDisplayVariable === 'thickness' && band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.possibleCloudBands as band (`viewer-rh-${band.sampleIndex}-${band.y}`)}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={routeDisplayVariable === 'thickness' ? band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM) : 'url(#viewer-route-rh-hatch)'} opacity={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? 0.86 : 1} stroke={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '#d7e4ea' : 'none'} stroke-dasharray={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '4 3' : undefined}><title>{routeCloudBandTitle(band.band, unitSystem)}</title></rect>{#if band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.levelMarks as mark (`route-level-${mark.sampleIndex}-${mark.pressureHPa ?? '未知'}-${mark.heightM}`)}{#if routeDisplayVariable !== 'thickness'}<circle cx={mark.x} cy={mark.y} r="3.5" class={`viewer-level-mark ${mark.missing ? 'viewer-level-mark--missing' : ''}`}><title>{formatHeight(mark.heightM, 0, unitSystem)} · {mark.pressureHPa ?? '气压未知'} 百帕 · {mark.missing ? '缺测' : routeMetricValue(mark.value, unitSystem)}</title></circle>{/if}{/each}{#if routeDisplayVariable === 'temperature'}{#each routeFreezingMarks as mark, index (index)}<circle cx={mark.x} cy={mark.y} r="5" class="viewer-freezing-mark"><title>{mark.name} · 0°C 温度层估算 {formatHeight(mark.heightM, 0, unitSystem)} · 路线距离 {formatDistance(mark.distanceM, 1, unitSystem)}</title></circle>{/each}{/if}{#if routeTargetLine.line}<path d={routeTargetLine.line} class="viewer-target-line viewer-route-target-path"/>{/if}{#each routeTargetLine.points as targetPoint (`target-${targetPoint.sampleIndex}`)}<circle cx={targetPoint.x} cy={targetPoint.y} r={targetPoint.sampleIndex === routeFocusedIndex ? 6 : 3.5} class="viewer-route-target-point"/>{/each}{#if routeTerrainOverlay.area}<path d={routeTerrainOverlay.area} class="viewer-terrain-area"/>{/if}{#if routeTerrainOverlay.line}<path d={routeTerrainOverlay.line} class="viewer-terrain-line"/>{:else if crossSectionGeometry.terrainPath}<path d={crossSectionGeometry.terrainPath} class="viewer-terrain-line"/>{/if}{#if routeTerrainOverlay.highest && routeTerrainOverlay.highest.elevationM <= 9_000}<circle cx={routeTerrainOverlay.highest.x} cy={routeTerrainOverlay.highest.y} r="5" class="viewer-highest-dot"><title>路线最高地形采样点：{formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}</title></circle>{/if}{#each routeWindMarks as wind (wind.sampleIndex)}<g transform={`translate(${wind.x},${wind.y}) rotate(${windFlowRotationDeg(wind.directionDeg)})`}><line x1="-11" y1="0" x2="9" y2="0" class="viewer-wind-arrow" marker-end="url(#viewer-wind-arrow)"><title>{wind.name}：风速 {formatWind(wind.speedMs, 1, unitSystem)}；风来自 {formatWindDirection(wind.directionDeg)}</title></line></g>{/each}{#each crossSectionGeometry.sampleMarks as mark (mark.sampleIndex)}<line x1={mark.x} x2={mark.x} y1={crossSectionGeometry.plot.bottom} y2={crossSectionGeometry.plot.top} class={mark.sampleIndex === routeFocusedIndex ? 'viewer-sample-line viewer-sample-line--active' : 'viewer-sample-line'}/>{#if mark.sampleIndex === 0 || mark.sampleIndex === crossSectionGeometry.sampleMarks.length - 1 || crossSectionGeometry.sampleMarks.length <= 10}<text x={mark.labelX} y={crossSectionGeometry.plot.bottom + 28} text-anchor={mark.labelAnchor} class="viewer-axis-label">{formatDistance(mark.distanceM, 1, unitSystem)}</text>{/if}<rect x={mark.left} y={crossSectionGeometry.plot.top} width={mark.width} height={crossSectionGeometry.plot.bottom - crossSectionGeometry.plot.top} class="route-sample-hit" role="button" tabindex="0" aria-label={`查看${mark.name}，路线距离 ${formatDistance(mark.distanceM, 1, unitSystem)}`} on:click={() => selectRouteSample(mark.sampleIndex)} on:keydown={(event) => handleRouteSampleKeydown(event, mark.sampleIndex)}><title>选择{mark.name}查看逐层天气</title></rect>{/each}
 {#if Number.isFinite(Number(targetAltitudeM)) && Number(targetAltitudeM) >= 0 && Number(targetAltitudeM) <= crossSectionGeometry.maxHeightM}
 	{@const lineY = crossSectionGeometry.y(Number(targetAltitudeM))}
@@ -177,8 +187,8 @@
 {/if}
 </svg></div>
 					<div class="route-chart-note">{#if routeDisplayVariable === 'temperature'}<span><i class="freezing-level-key"></i>圆点为各分析点的 0°C 温度层估算高度</span>{/if}<span><i class="wind-arrow-key"></i>黄色箭头指向风的去向，位于查询高度</span><span>没有箭头表示该高度的风向未返回</span><span>点击图中采样列可查看该点完整逐层数值</span></div>
-					<div class="route-terrain-note">{routeTerrainOverlay.highest ? `路线最高地形采样点：${formatDistance(routeTerrainOverlay.highest.distanceM, 1, unitSystem)} 处，${formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}${routeTerrainOverlay.highest.elevationM > crossSectionGeometry.maxHeightM ? '，高于图框上限，未在图中标点' : ''}` : '尚无足够的路线地形点绘制地形线'} · 地形采样与天气分析点分开，地形采样不会提高天气分辨率。</div><div class="route-surface-gust-note"><strong>路线分析点地面阵风</strong>{#if routeSurfaceGustSummary.maximum}<span>最高 {formatWind(routeSurfaceGustSummary.maximum.gustMs, 1, unitSystem)} · {routeSurfaceGustSummary.maximum.name} · {formatDistance(routeSurfaceGustSummary.maximum.distanceM, 1, unitSystem)}</span>{:else}<span>Windy 当前时刻未返回地面阵风。</span>{/if}<small>{routeSurfaceGustSummary.availableCount}/{routeSurfaceGustSummary.totalCount} 个点有值；这是地面字段，不代表高空。</small></div>
-					<div class="precipitation-section"><div class="precipitation-heading"><strong>路线地面降水</strong><span>单位：{precipitationUnit(unitSystem)} / {precipitationIntervalLabel}</span></div>{#if routePrecipitationGeometry.marks.some(mark => mark.available)}<div class="precipitation-chart"><svg viewBox={`0 0 ${routeChartWidth} 120`} preserveAspectRatio="none" role="img" aria-label="沿路线的地面降水和雪降水量"><line x1={routePrecipitationGeometry.plot.left} x2={routePrecipitationGeometry.plot.right} y1={routePrecipitationGeometry.plot.bottom} y2={routePrecipitationGeometry.plot.bottom} class="viewer-axis-line"/><line x1={routePrecipitationGeometry.plot.left} x2={routePrecipitationGeometry.plot.right} y1={routePrecipitationGeometry.plot.top} y2={routePrecipitationGeometry.plot.top} class="viewer-grid-line"/><text x="3" y={routePrecipitationGeometry.plot.top + 5} class="viewer-axis-label">{formatPrecipitation(routePrecipitationGeometry.scaleMaxMm, 1, unitSystem)}</text><text x="18" y={routePrecipitationGeometry.plot.bottom + 5} class="viewer-axis-label">0</text>{#each routePrecipitationGeometry.marks as mark, index (mark.key)}{#if mark.amountMm !== null}<rect x={mark.x - mark.width - 1} y={mark.totalY} width={mark.width} height={Math.max(1, mark.totalHeight)} class="precipitation-total-bar"><title>{mark.name}：降水 {formatPrecipitation(mark.amountMm, 1, unitSystem)} / {precipitationIntervalLabel}</title></rect>{/if}{#if mark.snowMm !== null}<rect x={mark.x + 1} y={mark.snowY} width={mark.width} height={Math.max(1, mark.snowHeight)} class="precipitation-snow-bar"><title>{mark.name}：雪降水 {formatPrecipitation(mark.snowMm, 1, unitSystem)} / {precipitationIntervalLabel}</title></rect>{/if}<circle cx={mark.x} cy={routePrecipitationGeometry.plot.bottom} r="3" class="precipitation-sample-dot"><title>{mark.available ? `${mark.name} · ${formatDistance(mark.distanceM, 1, unitSystem)}` : `${mark.name} · 降水数据缺测`}</title></circle>{#if shouldShowRoutePrecipitationDistanceLabel(index, routePrecipitationGeometry.marks.length)}<text x={mark.x} y="114" text-anchor={index === 0 ? 'start' : index === routePrecipitationGeometry.marks.length - 1 ? 'end' : 'middle'} class="viewer-axis-label">{formatRoutePrecipitationDistance(mark.distanceM)}</text>{/if}{/each}</svg></div><div class="viewer-chart-legend">{#if routeChartWidth <= 480}<span>横轴：沿线距离（{distanceUnit(unitSystem)}）</span>{/if}<span><i class="precipitation-key-total"></i>降水量</span><span><i class="precipitation-key-snow"></i>雪降水量</span><span>按预报时段累计；不是降水强度。地面字段不代表各高空高度的降水。</span></div>{:else}<p class="viewer-empty-note">当前模型未返回沿线地面降水数据。</p>{/if}</div>
+					<div class="route-terrain-note">{routeTerrainOverlay.highest ? `路线最高地形采样点：${formatDistance(routeTerrainOverlay.highest.distanceM, 1, unitSystem)} 处，${formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}${routeTerrainOverlay.highest.elevationM > crossSectionGeometry.maxHeightM ? '，高于图框上限，未在图中标点' : ''}` : '尚无足够的路线地形点绘制地形线'} · 地形采样与天气分析点分开，地形采样不会提高天气分辨率。</div><div class="route-surface-gust-note"><strong>路线分析点地面阵风</strong>{#if routeSurfaceGustSummary.maximum}<span>最高 {formatWind(routeSurfaceGustSummary.maximum.gustMs, 1, unitSystem)} · {routeSurfaceGustSummary.maximum.name} · {formatDistance(routeSurfaceGustSummary.maximum.distanceM, 1, unitSystem)}</span>{:else}<span>当前来源未返回地面阵风。</span>{/if}<small>{routeSurfaceGustSummary.availableCount}/{routeSurfaceGustSummary.totalCount} 个点有值；这是地面字段，不代表高空。</small></div>
+					<div class="precipitation-section"><div class="precipitation-heading"><strong>路线地面降水</strong><span>单位：{precipitationUnit(unitSystem)} / {precipitationIntervalLabel}</span></div>{#if routePrecipitationGeometry.marks.some(mark => mark.available)}<div class="precipitation-chart"><svg viewBox={`0 0 ${routeChartWidth} 120`} preserveAspectRatio="none" role="img" aria-label="沿路线的地面降水和雪降水量"><line x1={routePrecipitationGeometry.plot.left} x2={routePrecipitationGeometry.plot.right} y1={routePrecipitationGeometry.plot.bottom} y2={routePrecipitationGeometry.plot.bottom} class="viewer-axis-line"/><line x1={routePrecipitationGeometry.plot.left} x2={routePrecipitationGeometry.plot.right} y1={routePrecipitationGeometry.plot.top} y2={routePrecipitationGeometry.plot.top} class="viewer-grid-line"/><text x="3" y={routePrecipitationGeometry.plot.top + 5} class="viewer-axis-label">{formatPrecipitation(routePrecipitationGeometry.scaleMaxMm, 1, unitSystem)}</text><text x="18" y={routePrecipitationGeometry.plot.bottom + 5} class="viewer-axis-label">0</text>{#each routePrecipitationGeometry.marks as mark, index (mark.key)}{#if mark.amountMm !== null}<rect x={mark.x - mark.width - 1} y={mark.totalY} width={mark.width} height={Math.max(1, mark.totalHeight)} class="precipitation-total-bar"><title>{mark.name}：降水 {formatPrecipitation(mark.amountMm, 1, unitSystem)} / {precipitationIntervalLabel}</title></rect>{/if}{#if mark.snowMm !== null}<rect x={mark.x + 1} y={mark.snowY} width={mark.width} height={Math.max(1, mark.snowHeight)} class="precipitation-snow-bar"><title>{mark.name}：雪降水 {formatPrecipitation(mark.snowMm, 1, unitSystem)} / {precipitationIntervalLabel}</title></rect>{/if}<circle cx={mark.x} cy={routePrecipitationGeometry.plot.bottom} r="3" class="precipitation-sample-dot"><title>{mark.available ? `${mark.name} · ${formatDistance(mark.distanceM, 1, unitSystem)}` : `${mark.name} · 降水数据缺测`}</title></circle>{#if shouldShowRoutePrecipitationDistanceLabel(index, routePrecipitationGeometry.marks.length)}<text x={mark.x} y="114" text-anchor={index === 0 ? 'start' : index === routePrecipitationGeometry.marks.length - 1 ? 'end' : 'middle'} class="viewer-axis-label">{formatRoutePrecipitationDistance(mark.distanceM)}</text>{/if}{/each}</svg></div><div class="viewer-chart-legend">{#if routeChartWidth <= 480}<span>横轴：沿线距离（{distanceUnit(unitSystem)}）</span>{/if}<span><i class="precipitation-key-total"></i>降水量</span><span><i class="precipitation-key-snow"></i>{selectedProvider === 'open-meteo' ? '雪水当量' : '雪降水量'}</span><span>按预报时段累计；不是降水强度。地面字段不代表各高空高度的降水。</span></div>{:else}<p class="viewer-empty-note">当前模型未返回沿线地面降水数据。</p>{/if}</div>
 					<div class="route-sample-buttons" aria-label="选择路线分析点">{#each routeWeatherSamples as sample, index (sample.key)}<button class:active={routeFocusedIndex === index} on:click={() => selectRouteSample(index)}><strong>{sample.name}</strong><span>{formatDistance(sample.distanceM, 1, unitSystem)}</span></button>{/each}</div>
 					{#if routeComparisonRows.length}
 						<section class="route-comparison-section">
@@ -200,7 +210,7 @@
 							<div><span>查询高度云量</span><strong>{formatValue(row.weather.cloudPct, 0, '%')}</strong><small>{methodLabel(row.weather.methods?.cloud)}</small></div>
 							<div><span>0°C 温度层估算</span><strong>{freezingLevelText(row.freezingLevels)}</strong><small>相邻有效模式温度层插值</small></div>
 											<div><span>直接云底</span><strong>{formatHeight(row.cloudBaseM, 0, unitSystem)}</strong><small>Windy 返回值</small></div>
-							<div><span>地面降水 / 雪降水</span><strong>{formatPrecipitation(row.precipAmountMm, 1, unitSystem)} / {formatPrecipitation(row.precipSnowAmountMm, 1, unitSystem)}</strong><small>{precipitationIntervalLabel} 累计</small></div>
+							<div><span>{selectedProvider === 'open-meteo' ? '地面降水 / 雪水当量' : '地面降水 / 雪降水'}</span><strong>{formatPrecipitation(row.precipAmountMm, 1, unitSystem)} / {formatPrecipitation(row.precipSnowAmountMm, 1, unitSystem)}</strong><small>{precipitationIntervalLabel} 累计</small></div>
 							<div><span>地面雾／能见度</span><strong>{groundFogStatusLabel(routeGroundFogByKey.get(row.key)?.status)}</strong><small>{routeGroundFogByKey.get(row.key)?.reason ?? '天气未读取'}</small></div>
 											{#if row.hasForecast}<div class="target-visibility-unavailable"><span>目标高度能见度</span><strong>未提供</strong><small>地面能见度不代替高空</small></div>{/if}{#if row.surfaceVisibilityM !== null}<div><span>地面能见度</span><strong>{formatVisibility(row.surfaceVisibilityM)}</strong><small>不代表高空</small></div>{/if}
 										</div>
@@ -210,6 +220,7 @@
 							</div>
 						</section>
 					{/if}
+					{#if selectedProvider === 'windy'}<ExternalWeatherPanel sample={focusedRouteSample} timestampMs={effectiveForecastTimestampMs} heightM={Number(targetAltitudeM)} {unitSystem} />{/if}
 					{#if focusedRouteSample?.profile?.ok && focusedRouteFrame}
 						<div class="route-point-detail viewer-route-detail">
 							<strong>{focusedRouteSample.name} · {focusedRouteSample.lat.toFixed(3)}°，{focusedRouteSample.lon.toFixed(3)}°</strong>
@@ -228,11 +239,11 @@
 							<div class="route-point-profile-block">
 								<div class="viewer-section-head"><div><p class="viewer-kicker">所选路线点 · 垂直剖面</p><h2>海拔 0–9000 米垂直变化</h2></div><span>点按或拖动任一图，路线查询高度同步</span></div>
 								<div class="profile-coverage-notice route-profile-coverage" role="status">
-									<strong>{focusedRouteTargetResult?.reason === 'below-terrain' ? `查询海拔 ${formatHeight(focusedRouteTargetAltitudeMsl, 0, unitSystem)} 低于地形 ${formatHeight(focusedRouteTerrainM, 0, unitSystem)}；该高度没有可用天气值。` : focusedRouteTrendMetrics.some(metric => metric.geometry?.path) ? '已按 Windy 返回的有效高度层绘制趋势。' : '当前时刻没有足够的相邻高度层形成趋势线。'}</strong>
-									<p>{#each focusedRouteTrendMetrics as metric, metricIndex (`coverage-${metric.field}`)}{#if metricIndex > 0} · {/if}{metric.title} {metric.geometry?.points.length ?? 0} 个有效层{/each}。数值只取 Windy 原始层；每项至少需要两个相邻有效层才连线，缺测不补齐、不外推。</p>
+									<strong>{focusedRouteTargetResult?.reason === 'below-terrain' ? `查询海拔 ${formatHeight(focusedRouteTargetAltitudeMsl, 0, unitSystem)} 低于地形 ${formatHeight(focusedRouteTerrainM, 0, unitSystem)}；该高度没有可用天气值。` : focusedRouteTrendMetrics.some(metric => metric.geometry?.path) ? '已按所选来源返回的有效高度层绘制趋势。' : '当前时刻没有足够的相邻高度层形成趋势线。'}</strong>
+									<p>{#each focusedRouteTrendMetrics as metric, metricIndex (`coverage-${metric.field}`)}{#if metricIndex > 0} · {/if}{metric.title} {metric.geometry?.points.length ?? 0} 个有效层{/each}。数值只取所选来源返回层；每项至少需要两个相邻有效层才连线，缺测不补齐、不外推。</p>
 								{#if focusedRouteNearestUsableLevel}
 									<div class="route-nearest-level-summary">
-										<div><strong>最近有值的 Windy 模式层：{formatHeight(focusedRouteNearestUsableLevel.heightM, 0, unitSystem)}{focusedRouteNearestUsableLevel.source === 'model-surface' ? ' · 模式近地面' : ''}</strong><span>{#if focusedRouteNearestUsableLevel.source !== 'model-surface'}气压 {focusedRouteNearestUsableLevel.pressureHPa} 百帕 · {/if}温度 {formatTemperature(focusedRouteNearestUsableLevel.temperatureC, 1, unitSystem)} · 湿度 {formatValue(focusedRouteNearestUsableLevel.relativeHumidityPct, 0, '%')} · 风 {formatWind(focusedRouteNearestUsableLevel.windSpeedMs, 1, unitSystem)} {formatWindDirection(focusedRouteNearestUsableLevel.windDirectionDeg)} · 云量 {formatValue(focusedRouteNearestUsableLevel.cloudPct, 0, '%')}</span></div>
+										<div><strong>最近有值的模式层：{formatHeight(focusedRouteNearestUsableLevel.heightM, 0, unitSystem)}{focusedRouteNearestUsableLevel.source === 'model-surface' ? ' · 模式近地面' : ''}</strong><span>{#if focusedRouteNearestUsableLevel.source !== 'model-surface'}气压 {focusedRouteNearestUsableLevel.pressureHPa} 百帕 · {/if}温度 {formatTemperature(focusedRouteNearestUsableLevel.temperatureC, 1, unitSystem)} · 湿度 {formatValue(focusedRouteNearestUsableLevel.relativeHumidityPct, 0, '%')} · 风 {formatWind(focusedRouteNearestUsableLevel.windSpeedMs, 1, unitSystem)} {formatWindDirection(focusedRouteNearestUsableLevel.windDirectionDeg)} · 云量 {formatValue(focusedRouteNearestUsableLevel.cloudPct, 0, '%')}</span></div>
 										<button type="button" class="secondary-button" on:click={queryAtNearestRouteProfileLevel}>把查询线移到此层</button>
 									</div>
 								{/if}
@@ -244,7 +255,7 @@
 						<div class="trend-panel-heading"><h3>{metric.title} <small>{trendUnit(metric.field, unitSystem)}</small></h3><span>{trendCoverageSummary(geometry, metric.field, metric.digits)}</span></div>
 										{#if geometry}
 											{@const standalonePoints = geometry.referencePoints.filter(point => point.belowTerrain || geometry.isolatedPoints.some(isolated => isolated.heightM === point.heightM && isolated.value === point.value))}
-											{#if !geometry.path}<p class="trend-data-note trend-data-note--top">{geometry.points.length === 1 ? `地形以上只有 ${formatHeight(geometry.points[0].heightM, 0, unitSystem)} 这一层有值；单层无法形成趋势线，原始值列在下方。` : geometry.points.length > 1 ? geometry.hasRepeatedHeights ? '多组原始值落在相同海拔，不能形成垂直趋势线；原始值列在下方。' : `地形以上有 ${geometry.points.length} 个有效层，但缺测或模式层断档，没有可连成的趋势线；原始值列在下方。` : standalonePoints.length ? '地形以上没有有效值；下方灰色模式层位于地形以下，仅作参考，不能代表当地大气。' : 'Windy 当前时刻未返回该变量的有效高度值。'}</p>{/if}
+											{#if !geometry.path}<p class="trend-data-note trend-data-note--top">{geometry.points.length === 1 ? `地形以上只有 ${formatHeight(geometry.points[0].heightM, 0, unitSystem)} 这一层有值；单层无法形成趋势线，原始值列在下方。` : geometry.points.length > 1 ? geometry.hasRepeatedHeights ? '多组原始值落在相同海拔，不能形成垂直趋势线；原始值列在下方。' : `地形以上有 ${geometry.points.length} 个有效层，但缺测或模式层断档，没有可连成的趋势线；原始值列在下方。` : standalonePoints.length ? '地形以上没有有效值；下方灰色模式层位于地形以下，仅作参考，不能代表当地大气。' : '当前来源时刻未返回该变量的有效高度值。'}</p>{/if}
 											{#if standalonePoints.length}<div class="trend-observed-points" aria-label={`${metric.title}的 Windy 原始数据点`}>{#each standalonePoints as point (`route-observed-${metric.field}-${point.heightM}-${point.value}`)}<span class="trend-observed-point" style={`--trend-color:${point.belowTerrain ? '#9aa3b2' : metric.color}`}><strong>{formatHeight(point.heightM, 0, unitSystem)}{point.belowTerrain ? ' · 地形下参考' : ''}</strong><b>{formatTrendValue(point.value, metric.field, metric.digits, unitSystem)}</b><small>{point.source === 'model-surface' ? '模式地形近地面值' : `${point.pressureHPa} 百帕模式层`}</small></span>{/each}</div>{/if}
 							<svg viewBox={`0 0 ${trendChartWidth} 320`} preserveAspectRatio="none" role="group" aria-label={`${focusedRouteSample.name} ${metric.title}垂直剖面`}>
 													{#if geometry.belowTerrainPointCount > 0 && Number.isFinite(focusedRouteTerrainM) && focusedRouteTerrainM >= 0 && focusedRouteTerrainM <= geometry.maxHeightM}<defs><clipPath id={`route-point-below-${metric.field}`}><rect x={geometry.plot.left} y={geometry.plot.top} width={Math.max(0, geometry.x(Number(focusedRouteTerrainM)) - geometry.plot.left)} height={geometry.plot.bottom - geometry.plot.top}/></clipPath></defs><rect x={geometry.plot.left} y={geometry.plot.top} width={Math.max(0, geometry.x(Number(focusedRouteTerrainM)) - geometry.plot.left)} height={geometry.plot.bottom - geometry.plot.top} class="viewer-below-terrain-area"/>{/if}
@@ -277,6 +288,8 @@
 	import WindyFavoritePlaces from './WindyFavoritePlaces.svelte';
 	import { normalizeWindyFavorites, favoriteAtMapPixel } from './lib/windy-favorites.js';
 	import CloudSightlinePanel from './CloudSightlinePanel.svelte';
+	import ExternalWeatherPanel from './ExternalWeatherPanel.svelte';
+	import { loadExternalWeather, needsExternalWeather, externalValuesAt } from './lib/external-weather.js';
 	import { buildCloudSightline } from './lib/cloud-sightline.js';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import HumidityGauge from './HumidityGauge.svelte';
@@ -301,12 +314,15 @@
 	type ForecastModel = 'ecmwf' | 'icon';
 	type RoutePoint = { id: string; name: string; nameSource?: 'automatic' | 'custom'; lat: number; lon: number; elevationM?: number };
 	type TerrainPoint = { lat: number; lon: number; distanceM: number; elevationM: number | null; elevationSource?: 'manual' | 'windy' | null };
-	type WeatherProfile = (ReturnType<typeof parseWindyProfile> | ReturnType<typeof parseWindyLegacyProfile>) & { dataSource?: string; verticalDataNotice?: string; servedModelSource?: 'response' | 'request' | 'unknown'; diagnosticAlternates?: WeatherProfile[] };
-	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; terrainSource?: 'manual' | 'windy' | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; error?: string };
+	type WeatherProfile = (ReturnType<typeof parseWindyProfile> | ReturnType<typeof parseWindyLegacyProfile> | ReturnType<typeof import("./lib/external-weather.js").parseExternalWeather>) & { dataSource?: string; verticalDataNotice?: string; servedModelSource?: 'response' | 'request' | 'unknown'; diagnosticAlternates?: WeatherProfile[] };
+	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; terrainSource?: 'manual' | 'windy' | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; supplement?: ReturnType<typeof import("./lib/external-weather.js").parseExternalWeather> | null; supplementError?: string; error?: string };
 
 	const elevationCache = new Map<string, number | null>();
 	const weatherProfileCache = createMemoryCache({ ttlMs: 5 * 60_000, maxEntries: 96 });
 	let selectedModel: ForecastModel = 'ecmwf';
+	let selectedProvider: 'windy' | 'open-meteo' = 'windy';
+	$: weatherSourceLabel = selectedProvider === 'windy' ? 'Windy' : 'Open-Meteo';
+	let externalSupplementEnabled = true;
 	let unitSystem: 'metric' | 'imperial' = 'metric';
 	let forecastContextReady = false;
 
@@ -401,6 +417,11 @@
 	$: resetCloudSightlineEndpoints(JSON.stringify(routePoints.map(point => [point.id, point.lat, point.lon, point.elevationM])));
 	$: cloudSightline = cloudSightlineEnabled ? buildCloudSightline(routePoints, routeWeatherSamples, effectiveForecastTimestampMs,
 		cloudSightlineStartText, cloudSightlineTargetText, cloudSightlineEyeHeightM, crossSectionGeometry) : null;
+	$: externalSightlineEvidence = cloudSightline?.ok ? cloudSightline.marks.map(mark => {
+		const sample = routeWeatherSamples[mark.index];
+		return {name:mark.name, ...externalValuesAt(sample?.supplement,effectiveForecastTimestampMs,mark.heightM,
+			mark.index === 0 ? cloudSightline.observerM - cloudSightlineEyeHeightM : mark.index === routeWeatherSamples.length - 1 ? cloudSightline.targetM : sample?.terrainElevationM), error:sample?.supplementError};
+	}) : [];
 	function resetCloudSightlineEndpoints(key: string) {
 		if (key === cloudSightlineEndpointKey) return;
 		cloudSightlineEndpointKey = key;
@@ -507,7 +528,7 @@
 		return terrainSamples.length ? '该点地形缺测' : '地形未读取';
 	}
 	function pointForecastRequestKey(model: ForecastModel, source: 'detail' | 'multiload', point: { lat: number; lon: number }, step = forecastStep) {
-		return `forecast:${model}:${source}:${step}:${requestedForecastDays}:${requestCoordinateKey(point)}`;
+		return `forecast:${selectedProvider}:${model}:${source}:${step}:${requestedForecastDays}:${requestCoordinateKey(point)}`;
 	}
 	function elevationRequestKey(point: { lat: number; lon: number }) {
 		return `elevation:${requestCoordinateKey(point)}`;
@@ -604,6 +625,7 @@
 
 	async function loadWeatherProfile(point: { lat: number; lon: number }, model: ForecastModel, source: 'detail' | 'multiload', step: 1 | 3, signal: AbortSignal): Promise<WeatherProfile> {
 		abortIfNeeded(signal);
+		if (selectedProvider === 'open-meteo') return await loadExternalWeather(point,requestedForecastDays,signal,model) as WeatherProfile;
 		const cacheKey = pointForecastRequestKey(model, source, point, step);
 		const cached = weatherProfileCache.get(cacheKey);
 		if (cached) return cached;
@@ -1164,7 +1186,7 @@
 		const thickness = band.thicknessM === null ? '边界不完整，不能估算厚度'
 			: `层界估算厚度约 ${formatHeight(band.thicknessM, 0, system)}`;
 		const overflow = band.highHeightM > 9_000 ? `；${band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能延伸到图框以上，云顶未确定'}` : '';
-		return `Windy 逐层云量识别的模式云带：${low}至${high}；最高云量 ${Math.round(band.peakCloudPct)}%；${thickness}；边界按相邻模式层中点估算${overflow}`;
+		return `${weatherSourceLabel} 逐层云量识别的模式云带：${low}至${high}；最高云量 ${Math.round(band.peakCloudPct)}%；${thickness}；边界按相邻模式层中点估算${overflow}`;
 	}
 
 	function routeCloudBandTitle(band: { lowHeightM: number; highHeightM: number; lowerBoundaryKnown: boolean; upperBoundaryKnown: boolean; thicknessM: number | null }, system: 'metric' | 'imperial' = unitSystem) {
@@ -1254,6 +1276,12 @@
 		routeFocusedIndex = 0;
 	}
 
+	function selectProvider(provider: 'windy' | 'open-meteo') {
+		if (selectedProvider === provider) return;
+		selectedProvider = provider;
+		resetRouteWeather();
+		if (routePoints.length >= 2) void loadRouteProfile();
+	}
 	function selectModel(model: ForecastModel) {
 		if (selectedModel === model) return;
 		selectedModel = model;
@@ -1263,7 +1291,7 @@
 
 	function routeDiagnosticStatus(sample: RouteWeatherSample) {
 		const profile = sample.profile ?? sample.diagnosticProfile;
-		if (sample.profile?.ok) return `已解析垂直层 ${sample.profile.frames?.reduce((maximum, frame) => Math.max(maximum, frame.levels?.length ?? 0), 0) ?? 0} 层 · 可用时次 ${sample.profile.timestampsMs?.length ?? 0} 个`;
+		if (sample.profile?.ok) return `已解析垂直层 ${sample.profile.frames?.reduce((maximum, frame) => Math.max(maximum, frame.levels?.length ?? 0), 0) ?? 0} 层 · 可用时次 ${sample.profile.timestampsMs?.length ?? 0} 个 · ${sample.supplement ? "GFS 补充已读取" : sample.supplementError || "无补充"}`;
 		if (profile?.ok) return '仅有近地面天气值，没有可用垂直层';
 		if (profile) return '已收到响应，但未解析到可用天气值';
 		return sample.error ? '请求或响应解析失败，可复制摘要查看状态' : '尚无可诊断的天气响应';
@@ -1282,7 +1310,7 @@
 			responseArrays: {},
 		};
 		const timestampMs = effectiveForecastTimestampMs ?? selectedForecastTimestampMs ?? profileForSummary.timestampsMs?.[0] ?? null;
-		return `路线分析点：${sample.name} · 沿线 ${formatDistance(sample.distanceM, 1, unitSystem)}\n\n${buildProfileDiagnosticSummary(profileForSummary, timestampMs, sample.terrainElevationM)}`;
+		return `路线分析点：${sample.name} · 沿线 ${formatDistance(sample.distanceM, 1, unitSystem)}\n\n${buildProfileDiagnosticSummary(profileForSummary, timestampMs, sample.terrainElevationM)}\n\n外部独立补充：${sample.supplement ? `Open-Meteo GFS；有效时次 ${sample.supplement.timestampsMs.length} 个；未与 Windy 合并` : sample.supplementError || "未读取／无需补充"}`;
 	}
 
 	async function copyRouteDiagnosticSummary(sample: RouteWeatherSample) {
@@ -1319,7 +1347,8 @@
 	}
 
 	function commonRouteTimes(samples: RouteWeatherSample[]) {
-		const profiles = samples.map(sample => sample.profile).filter((profile): profile is WeatherProfile => Boolean(profile?.ok));
+		const windyProfiles = samples.map(sample => sample.profile).filter((profile): profile is WeatherProfile => Boolean(profile?.ok));
+		const profiles = windyProfiles.length ? windyProfiles : samples.map(sample => sample.supplement).filter(profile => profile?.ok);
 		if (!profiles.length) return [];
 		return profiles[0].timestampsMs.filter(timestamp => profiles.every(profile => profile.timestampsMs.some(candidate => Math.abs(candidate - timestamp) <= 1_000)));
 	}
@@ -1332,6 +1361,7 @@
 			name: point.name ?? (index === 0 ? '起点' : index === analysisPoints.length - 1 ? '终点' : `分析点 ${index + 1}`),
 		}));
 		const model = selectedModel;
+		const provider = selectedProvider;
 		const step = forecastStep;
 		if (requestedPoints.length < 2) {
 			routeWeatherError = '路线至少需要两个分析点';
@@ -1354,6 +1384,8 @@
 			const key = `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`;
 			let profile: WeatherProfile | null = null;
 			let diagnosticProfile: WeatherProfile | null = null;
+			let supplement = null;
+			let supplementError = "";
 			let terrainElevationM: number | null = null;
 			const latestWaypoint = routeWaypointAt(point);
 			const manualElevationM = Number.isFinite(latestWaypoint?.elevationM) ? latestWaypoint.elevationM : null;
@@ -1368,10 +1400,15 @@
 					: 'Windy 未返回实际模式，此点未纳入路线剖面';
 				else error = [parsed.error, parsed.verticalDataNotice].filter(Boolean).join('；');
 			} catch (requestError) {
-				error = isWindyRateLimit(requestError) ? 'Windy 请求频率达到限制' : requestError instanceof Error ? requestError.message : String(requestError);
+				error = isWindyRateLimit(requestError) ? `${weatherSourceLabel} 请求频率达到限制` : requestError instanceof Error ? requestError.message : String(requestError);
 				if (isWindyRateLimit(requestError)) routeRateLimited = true;
 			}
-			if (runId !== activeRouteWeatherRun) return null;
+			if (runId !== activeRouteWeatherRun || requestController.signal.aborted) return null;
+			if (provider === 'windy' && externalSupplementEnabled && !routeRateLimited && needsExternalWeather(profile)) {
+				try { supplement = await loadExternalWeather(point, requestedForecastDays, requestController.signal); }
+				catch (externalError) { supplementError = externalError instanceof Error ? externalError.message : String(externalError); }
+			}
+			if (runId !== activeRouteWeatherRun || requestController.signal.aborted) return null;
 			if (manualElevationM !== null) terrainElevationM = manualElevationM;
 			else if (!routeRateLimited) {
 				try {
@@ -1382,7 +1419,7 @@
 				}
 			}
 			const terrainSource = manualElevationM !== null ? 'manual' : Number.isFinite(terrainElevationM) ? 'windy' : null;
-			const sample: RouteWeatherSample = { key, ...point, name: latestWaypoint?.name ?? point.name, terrainElevationM, terrainSource, profile, diagnosticProfile, error: error || undefined };
+			const sample: RouteWeatherSample = { key, ...point, name: latestWaypoint?.name ?? point.name, terrainElevationM, terrainSource, profile, diagnosticProfile, supplement, supplementError, error: error || undefined };
 			routeWeatherSamples = [...routeWeatherSamples.filter(item => item.key !== key), sample].sort((a, b) => a.distanceM - b.distanceM);
 			routeWeatherTimesMs = commonRouteTimes(routeWeatherSamples);
 			routeWeatherProgress += 1;
@@ -1391,8 +1428,8 @@
 		if (runId !== activeRouteWeatherRun) return;
 		if (routeWeatherRequestController === requestController) routeWeatherRequestController = null;
 		routeWeatherTimesMs = commonRouteTimes(routeWeatherSamples);
-		if (routeRateLimited) routeWeatherError = `Windy 请求达到频率限制，已停止后续采样。当前完成 ${routeWeatherProgress}/${requestedPoints.length} 个天气点；稍后可重新读取。`;
-		else if (routeWeatherSamples.every(sample => !sample.profile?.ok)) routeWeatherError = 'Windy 未返回任何可用路线天气剖面';
+		if (routeRateLimited) routeWeatherError = `${weatherSourceLabel} 请求达到频率限制，已停止后续采样。当前完成 ${routeWeatherProgress}/${requestedPoints.length} 个天气点；稍后可重新读取。`;
+		else if (routeWeatherSamples.every(sample => !sample.profile?.ok && !sample.supplement?.ok)) routeWeatherError = `${weatherSourceLabel} 未返回任何可用路线天气剖面`;
 		else if (!routeWeatherTimesMs.length) routeWeatherError = '路线各点没有共同的有效预报时刻，避免混用不同时间';
 		else selectedForecastTimestampMs = nearestTimestamp(routeWeatherTimesMs);
 		if (routeWeatherSamples.some(sample => !sample.profile?.ok) && !routeWeatherError) routeWeatherError = '部分路线点数据缺失；缺测位置已留空';

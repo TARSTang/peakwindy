@@ -1,5 +1,6 @@
 <script>
 	import { createEventDispatcher } from 'svelte';
+	import { formatForecastTime } from './lib/profile.js';
 	import { heightToDisplay, heightUnit, distanceToDisplay, distanceUnit } from './lib/units.js';
 	const formatHeight = (value, digits, system) => `${heightToDisplay(value, system)?.toFixed(digits) ?? '—'} ${heightUnit(system)}`;
 	const formatDistance = (value, digits, system) => `${distanceToDisplay(value, system)?.toFixed(digits) ?? '—'} ${distanceUnit(system)}`;
@@ -8,6 +9,8 @@
 	export let targetText = '';
 	export let eyeHeightM = 1.6;
 	export let analysis;
+	export let sourceLabel = 'Windy';
+	export let externalEvidence = [];
 	export let unitSystem = 'metric';
 	export let selectedIndex = 0;
 	const dispatch = createEventDispatcher();
@@ -24,7 +27,7 @@
 			<label>视点离地（米）<input type="number" min="0" max="100" step="0.1" bind:value={eyeHeightM}/></label>
 		</div>
 		{#if analysis?.ok}
-			<strong>{analysis.cloudCount ? '存在云层相交信号' : analysis.humidCount ? '存在高湿可能云区信号' : analysis.unknownCount || !analysis.marks.length ? '资料不足' : '已采样位置未发现云层相交信号'}</strong>
+			<strong>{sourceLabel}：{analysis.cloudCount ? '存在云层相交信号' : analysis.humidCount ? '存在高湿可能云区信号' : analysis.unknownCount || !analysis.marks.length ? '资料不足' : '已采样位置未发现云层相交信号'}</strong>
 			<p>机位：{analysis.observerName}（视点 {formatHeight(analysis.observerM, 0, unitSystem)}） → 目标：{analysis.targetName}（{formatHeight(analysis.targetM, 0, unitSystem)}）</p>
 			<p>模式零云量 {analysis.clearCount} 点 · 云信号 {analysis.cloudCount} 点 · 高湿 {analysis.humidCount} 点 · 缺测 {analysis.unknownCount} 点 ／ 共 {analysis.marks.length} 点</p>
 			{#each analysis.correctionWarnings as warning}<p class="sightline-warning">{warning}</p>{/each}
@@ -33,6 +36,12 @@
 			<details><summary>逐点视线云层依据</summary><div class="points">{#each analysis.marks as mark}<button type="button" on:click={() => dispatch('select', mark.index)}>{mark.name} · {formatDistance(mark.distanceM, 1, unitSystem)}：{mark.text}</button>{/each}</div></details>
 			{#if analysis.outsideChart}<p>部分视线超出当前 0–9000 米图框；图中只显示范围内的线段，缺失部分不代表无云。</p>{/if}
 		{:else}<p role="status">{analysis?.reason}</p>{/if}
+		{#if externalEvidence.length}
+			<details><summary>Open-Meteo GFS · 独立视线云层参考</summary>
+				<p>与上方 {sourceLabel} 判断分开；不同模式之间不拼接成一条确定的无云光路。</p>
+				<div class="points">{#each externalEvidence as point,index}<button type="button" on:click={() => dispatch('select',index)}>{point.name}：{Number.isFinite(point.values.cloudPct) ? point.values.cloudPct > 0 ? `云量 ${Math.round(point.values.cloudPct)}% · 云层相交信号` : '云量 0% · 不能保证实况可见' : '云量缺测'} · {Number.isFinite(point.values.humidityPct) ? `湿度 ${Math.round(point.values.humidityPct)}%${point.values.humidityPct >= 90 ? ' · 高湿可能云区' : ''}` : '湿度缺测'} · {point.times.length ? point.times.map(t=>formatForecastTime(t)).join(' ～ ') + ' 北京时间' : '无匹配有效时次'}{point.times.length > 1 ? ' · 两侧时次保守值' : ''}{point.error ? ` · ${point.error}` : ''}</button>{/each}</div>
+			</details>
+		{/if}
 		<p class="limit">仅检查视线云层信号，不判断地形遮挡。考虑几何曲率，未校正大气折射；点间云区仍是估算，缺测不代表无云。云量不是遮挡概率；雾、霾和实际透明度仍需人工判断。</p>
 	{/if}
 </section>

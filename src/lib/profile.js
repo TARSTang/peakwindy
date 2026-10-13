@@ -303,6 +303,7 @@ export function mergeCompatibleProfileFields(primary, secondary) {
 }
 
 export function profileProvenance(profile) {
+	if (profile?.dataSource === 'open-meteo') return { source: 'Open-Meteo', model: `请求模式 ${String(profile.servedModel ?? '未知').toUpperCase()}（响应未标注模式名，起报时间未返回）` };
 	if (!profile) return { source: 'Windy 数据接口', model: '模式信息未读取' };
 	const source = profile.dataSource === 'windy-legacy-meteogram'
 		? LEGACY_PROFILE_SOURCE_LABEL
@@ -552,6 +553,7 @@ function profileLayersAdjacent(lower, upper) {
 }
 
 function diagnosticSourceLabel(profile) {
+	if (profile?.dataSource === 'open-meteo') return 'Open-Meteo 公开预报接口';
 	return profile?.dataSource === 'windy-legacy-meteogram'
 		? LEGACY_PROFILE_SOURCE_LABEL
 		: profile?.dataSource === 'windy-point-forecast-v3'
@@ -608,13 +610,13 @@ function unframedProfileDiagnosticSummary(profile) {
 		: profile?.servedModelSource === 'request' ? '按请求模式标注' : '未标注';
 	const availableLevels = Array.isArray(profile?.availableLevelNames) ? profile.availableLevelNames : [];
 	const lines = [
-		'Windy 高空数据摘要（仅字段与能力信息，不含天气数值或坐标）',
+		'高空数据摘要（仅字段与能力信息，不含天气数值或坐标）',
 		'数据来源：' + diagnosticSourceLabel(profile),
 		'模式：' + String(mode).toUpperCase() + '（' + modelSource + '）',
 		'剖面状态：无可用剖面帧',
 		'错误状态：' + (profile?.error ? '请求或解析存在错误（详情见插件界面）' : '未取得可用天气剖面'),
 		'可识别预报时次：' + timestamps.length + ' 个；解析帧：' + frames.length + ' 个',
-		'Windy 声明的气压层：' + (availableLevels.length ? availableLevels.map(String).join('、') + '（层级元数据，不代表已有对应天气值）' : '未提供'),
+		'来源声明的气压层：' + (availableLevels.length ? availableLevels.map(String).join('、') + '（层级元数据，不代表已有对应天气值）' : '未提供'),
 	];
 	appendPointForecastGroupDiagnostics(lines, profile);
 	lines.push('响应字段形状与有效数量（不含原始值）：');
@@ -636,14 +638,14 @@ export function buildProfileDiagnosticSummary(profile, timestampMs, terrainEleva
 	const sourceLabel = diagnosticSourceLabel(profile);
 	const model = profile.servedModel || profile.requestedModel || '未标注';
 	const lines = [
-		'Windy 高空数据摘要（不含天气数值）',
+		'高空数据摘要（不含天气数值）',
 		'数据来源：' + sourceLabel,
 		'模式：' + String(model).toUpperCase(),
 		'模式标注来源：' + (profile.servedModelSource === 'response' ? 'Windy 响应' : profile.servedModelSource === 'request' ? '请求参数' : '未知'),
 		'剖面状态：' + (profile.ok ? '存在可用天气值' : '当前响应未解析到可用天气值'),
 		...(!profile.ok && profile.error ? ['错误状态：有（详情见插件界面）'] : []),
 		'有效时次：' + new Date(frame.timestampMs).toISOString(),
-		'Windy 声明的气压层：' + ((profile.availableLevelNames?.length ? profile.availableLevelNames : (profile.pressureLevels?.map(level => String(level) + 'h') ?? [])).join('、') || '无'),
+		'来源声明的气压层：' + ((profile.availableLevelNames?.length ? profile.availableLevelNames : (profile.pressureLevels?.map(level => String(level) + 'h') ?? [])).join('、') || '无'),
 		'本时次解析出带高度的气压层：' + (frame.levels?.length ?? 0) + ' 层',
 	];
 	appendPointForecastGroupDiagnostics(lines, profile);
