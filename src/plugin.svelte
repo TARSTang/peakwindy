@@ -46,6 +46,7 @@
 		<p class="section-copy">按顺序点击地图或输入坐标添加路线点；点名称可修改并收藏，路线按实地距离计算。</p>
 
 
+			<RouteLibrary draft={savedRouteDraft} on:use={useSavedRoute} on:saved={event=>currentRouteName=event.detail.name} />
 			<div class="route-toolbar">
 				<span>{routePoints.length} 个路线点{routeDistanceM ? ` · ${formatDistance(routeDistanceM, 1, unitSystem)}` : ''}</span>
 				<div>
@@ -81,16 +82,18 @@
 					<div><span>地形数据</span><strong>{terrainSamples.filter(point => Number.isFinite(point.elevationM)).length} 个采样点</strong></div>
 					{#if terrainTotal > 1}<small>地形网格约 {formatDistance(routeDistanceM / Math.max(1, terrainGridIntervals), 2, unitSystem)}；加密地形不提高天气分辨率。</small>{/if}
 				</div>
-				<div class="weather-section route-weather-section">
+				<div class="weather-section route-weather-section" bind:this={routeAnalysisSection}>
 					<div class="weather-section-heading"><div><p class="eyebrow">路线天气分析</p><h3>路线天气剖面</h3></div><span class="data-source-tag">{weatherSourceLabel} · {selectedModel.toUpperCase()}</span></div>
 					<p class="section-copy">默认沿线约每 5 千米读取天气，起点、转折点和终点均保留。等距网格最多 61 点；长路线会增大间距。加密采样耗时更长，不提高天气模型本身的分辨率。</p>
-					{#if selectedProvider === 'windy'}<label class="coordinate-format-note"><input type="checkbox" bind:checked={externalSupplementEnabled} on:change={() => { cancelUnifiedRouteAnalysis(false); routeWeatherSamples = []; routeWeatherTimesMs = []; routeWeatherReadAt = 0; }} /> Windy 缺测时补查 Open-Meteo GFS（会发送路线分析点坐标）</label>{/if}
+					{#if selectedProvider === 'windy'}<label class="coordinate-format-note"><input type="checkbox" bind:checked={externalSupplementEnabled} on:change={resetRouteWeather} /> Windy 缺测时补查 Open-Meteo GFS（会发送路线分析点坐标）</label>{/if}
 					<div class="weather-actions">
-						<button class="secondary-button" disabled={routeAnalysisRunning || routePoints.length < 2} on:click={(event) => analyseAndViewRoute(event)}>{routeAnalysisRunning ? routeAnalysisStage === 'weather' ? `读取天气 ${routeWeatherProgress}/${analysisPoints.length}` : `读取地形 ${terrainProgress}/${terrainTotal}` : routeAnalysisReady ? '查看路线剖面' : '分析并查看路线剖面'}</button>
+						<button class="secondary-button" disabled={routeAnalysisRunning || routePoints.length < 2} on:click={(event) => analyseAndViewRoute(event)}>{routeAnalysisRunning ? routeAnalysisStage === 'weather' ? `读取天气 ${routeWeatherProgress}/${analysisPoints.length}` : `读取地形 ${terrainProgress}/${terrainTotal}` : routeAnalysisReady ? '查看已有路线剖面' : '分析并查看路线剖面'}</button>
 						{#if routeAnalysisRunning || routeWeatherLoading || terrainLoading}<button class="text-button" on:click={() => cancelUnifiedRouteAnalysis()}>取消分析</button>{:else if routeWeatherTimesMs.length}<button class="text-button" on:click={(event) => analyseAndViewRoute(event, true)}>重新分析</button>{/if}
 					</div>
-					<p class="coordinate-format-note">一次操作读取路线天气与地形，完成后自动打开全屏剖面。{selectedProvider === 'windy' ? 'Windy 缺测时可补查 GFS，结果单独显示。' : 'Open-Meteo 直接用于主剖面与视线，不调用 Windy 天气接口；ICON 最多请求 7 天，ECMWF 最多请求 15 天，覆盖以实际返回时次为准。'}</p>
+					<p class="coordinate-format-note">选好来源与模式后点击分析；主天气完成就显示剖面，地形随后补齐。{selectedProvider === 'windy' ? 'GFS 在主流程结束后独立补查，可单独取消，不拖住主结果。' : 'Open-Meteo 直接用于主剖面与视线，不调用 Windy 天气接口；ICON 最多请求 7 天，ECMWF 最多请求 15 天，覆盖以实际返回时次为准。'}</p>
+					{#if selectedProvider === 'windy' && externalSupplementEnabled}<SupplementProgress running={supplementRunning} completed={supplementCompleted} total={supplementTotal} notice={supplementNotice} available={!routeAnalysisRunning && !routeWeatherLoading && !terrainLoading && routeWeatherSamples.length > 0} on:cancel={()=>cancelRouteSupplements()} on:retry={()=>startRouteSupplements(true)} />{/if}
 					{#if routeAnalysisNotice}<p class="load-status" role="status">{routeAnalysisNotice}</p>{/if}
+					{#if routeWeatherRetentionNotice}<p class="load-status" role="status">{routeWeatherRetentionNotice}</p>{/if}
 					{#if terrainError}<p class="inline-error" role="alert">{terrainError}</p>{/if}
 					{#if routeWeatherError}<p class="inline-error" role="alert">{routeWeatherError}</p>{/if}
 					{#if routeWeatherSamples.length}
@@ -136,9 +139,14 @@
 					</div>
 				</div>
 				<div class="viewer-provenance"><span>数据接口：{viewerProvenance.source}</span><span>模式：{viewerProvenance.model}</span><span>有效时间间隔：{precipitationIntervalLabel}</span><span>起报：{formatSourceTime(viewerSourceProfile?.referenceTime)}</span><span>更新：{formatSourceTime(viewerSourceProfile?.updateTime)}</span></div>
-				<p class="viewer-empty-note">新版接口请求范围：{requestedForecastDays} 天；{profileTimeOptions.length ? `${profileViewer === 'route' ? '路线共同' : '当前点'}返回时次：${formatForecastTime(profileTimeOptions[0])} 至 ${formatForecastTime(profileTimeOptions[profileTimeOptions.length - 1])}（北京时间），共 ${profileTimeOptions.length} 个时次。` : '尚无可用时次。'} 实际范围受模型与账号权限限制，各高度的有效层仍可能缺测。</p>
+				<p class="viewer-empty-note">天气请求范围上限：{selectedProvider === 'open-meteo' && selectedModel === 'icon' ? 7 : requestedForecastDays} 天；{profileTimeOptions.length ? `${profileViewer === 'route' ? '路线共同' : '当前点'}返回时次：${formatForecastTime(profileTimeOptions[0])} 至 ${formatForecastTime(profileTimeOptions[profileTimeOptions.length - 1])}（北京时间），共 ${profileTimeOptions.length} 个时次。` : '尚无可用时次。'} 实际范围受模型与账号权限限制，各高度的有效层仍可能缺测。</p>
 
 				{#if profileViewer === 'route'}
+					{#if routeWeatherRetentionNotice}<p role="status" class="viewer-empty-note">{routeWeatherRetentionNotice}</p>{/if}
+					{#if routeWeatherRetentionNotice && routeWeatherError}<p class="viewer-empty-note">{routeWeatherError}</p>{/if}
+					{#if routeAnalysisRunning || terrainLoading}<p role="status" class="viewer-empty-note">{routeWeatherLoading ? `正在读取天气 ${routeWeatherProgress}/${analysisPoints.length}。` : `主天气已显示，地形仍在读取 ${terrainProgress}/${terrainTotal}。`}<button class="secondary-button" on:click={()=>cancelUnifiedRouteAnalysis()}>取消分析</button></p>{/if}
+					{#if selectedProvider === 'windy' && externalSupplementEnabled}<SupplementProgress running={supplementRunning} completed={supplementCompleted} total={supplementTotal} notice={supplementNotice} available={!routeAnalysisRunning && !routeWeatherLoading && !terrainLoading && routeWeatherSamples.length > 0} on:cancel={()=>cancelRouteSupplements()} on:retry={()=>startRouteSupplements(true)} />{/if}
+					<WeatherSourceInfo profile={focusedRouteSample?.profile} provider={selectedProvider} model={selectedModel} timestampMs={effectiveForecastTimestampMs} terrainM={focusedRouteSample?.terrainElevationM} {unitSystem} />
 					<div class="viewer-stat-grid"><div><span>来源／模式</span><strong>{weatherSourceLabel} · {selectedModel.toUpperCase()}</strong></div><div><span>有垂直数据</span><strong>{routeWeatherSamples.filter(sample => sample.profile?.hasVerticalLayers).length}/{routeWeatherSamples.length} 点</strong></div><div><span>路线距离</span><strong>{formatDistance(routeDistanceM, 1, unitSystem)}</strong></div><div><span>查询高度</span><strong>{formatHeight(Number(targetAltitudeM), 0, unitSystem)} {'海拔'}</strong></div></div>
 					<div class="viewer-target-control"><label>查询高度<input type="number" min={displayHeightNumber(0, 0, unitSystem)} max={displayHeightNumber(20_000, 0, unitSystem)} step={unitSystem === 'metric' ? 50 : 100} value={displayHeightNumber(Number(targetAltitudeM), 1, unitSystem)} on:change={handleTargetAltitudeChange} aria-label={`查询高度，${'海拔'}，${heightUnit(unitSystem)}`} />{heightUnit(unitSystem)}</label><span>横轴：路线累计距离 · 纵轴：海拔</span></div>
 					<div class="route-nearest-level-slot"><button type="button" class="secondary-button" disabled={!focusedRouteNearestUsableLevel} on:click={queryAtNearestRouteProfileLevel}>{focusedRouteNearestUsableLevel ? `查看最近有效层 ${formatHeight(focusedRouteNearestUsableLevel.heightM, 0, unitSystem)}` : '该点暂无有效高度层'}</button></div>
@@ -168,6 +176,8 @@
 	<p title={routeReadoutNotice}>{routeReadoutNotice}</p>
 </section>
 <CloudSightlinePanel bind:enabled={cloudSightlineEnabled} bind:startText={cloudSightlineStartText} bind:targetText={cloudSightlineTargetText} bind:eyeHeightM={cloudSightlineEyeHeightM} analysis={cloudSightline} sourceLabel={weatherSourceLabel} externalEvidence={externalSightlineEvidence} {unitSystem} selectedIndex={routeFocusedIndex} on:select={(event) => selectRouteSample(event.detail)} />
+{#if cloudSightlineEnabled}<SightlineOverview points={routePoints} samples={routeWeatherSamples} timestamps={profileTimeOptions} startText={cloudSightlineStartText} targetText={cloudSightlineTargetText} eyeHeightM={cloudSightlineEyeHeightM} selectedTimestampMs={effectiveForecastTimestampMs} sourceLabel={weatherSourceLabel + ' · ' + selectedModel.toUpperCase()} on:select={event=>changeForecastTime(event.detail)}/>{/if}
+<RouteLibrary draft={savedRouteDraft} on:use={useSavedRoute} />
 <div class="route-viewer-chart" use:observeRouteChartWidth><svg viewBox={`0 0 ${crossSectionGeometry.width} ${crossSectionGeometry.height}`} preserveAspectRatio="none" role="group" aria-label="路线距离与海拔天气剖面；可选择各天气采样点" on:pointermove={hoverRouteChart} on:pointerleave={clearRoutePointerReadout}><defs><pattern id="viewer-route-rh-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#592568" fill-opacity=".42"/><line x1="0" y1="0" x2="0" y2="7" stroke="#e879f9" stroke-width="2" stroke-opacity="1"/></pattern><pattern id="viewer-route-incomplete-hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="#626d80" fill-opacity=".36"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aab4c4" stroke-width="2" stroke-opacity=".96"/></pattern><marker id="viewer-wind-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#ffd166"/></marker></defs><text x={crossSectionGeometry.plot.left} y={crossSectionGeometry.plot.top - 14} class="viewer-axis-title">海拔（{heightUnit(unitSystem)}）</text>{#each profileAltitudeTicks as tick (tick)}<line x1={crossSectionGeometry.plot.left} x2={crossSectionGeometry.plot.right} y1={crossSectionGeometry.y(tick)} y2={crossSectionGeometry.y(tick)} class="viewer-grid-line"/><text x={crossSectionGeometry.plot.left - 10} y={crossSectionGeometry.y(tick) + 5} text-anchor="end" class="viewer-axis-label">{displayHeightNumber(tick, 0, unitSystem)}</text>{/each}{#each crossSectionGeometry.cells as cell (`viewer-${cell.sampleIndex}-${cell.pressureHPa ?? 'missing'}-${cell.y}`)}<rect x={cell.x} y={cell.y} width={cell.width} height={cell.height} fill={cell.missing ? 'url(#viewer-route-incomplete-hatch)' : crossSectionColor(cell.value, routeDisplayVariable)} opacity={cell.missing ? 1 : .94} stroke={cell.missing ? '#aab4c4' : '#0b1122'} stroke-width="1" stroke-dasharray={cell.missing ? '3 3' : undefined}><title>{routeCellTitle(cell, unitSystem)}</title></rect>{/each}{#each crossSectionGeometry.directCloudBands as band (`viewer-model-cloud-${band.sampleIndex}-${band.band.lowHeightM}`)}{#if routeDisplayVariable === 'thickness'}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM)} opacity=".92" stroke={band.band.thicknessM === null ? '#c1c9d4' : '#f2f5fb'} stroke-dasharray={band.band.thicknessM === null ? '2 3' : undefined}><title>{directCloudBandTitle(band.band, unitSystem)}</title></rect>{/if}{#if routeDisplayVariable === 'thickness' && band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.possibleCloudBands as band (`viewer-rh-${band.sampleIndex}-${band.y}`)}<rect x={band.x} y={band.y} width={band.width} height={band.height} fill={routeDisplayVariable === 'thickness' ? band.band.thicknessM === null ? 'url(#viewer-route-incomplete-hatch)' : cloudThicknessColor(band.band.thicknessM) : 'url(#viewer-route-rh-hatch)'} opacity={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? 0.86 : 1} stroke={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '#d7e4ea' : 'none'} stroke-dasharray={routeDisplayVariable === 'thickness' && band.band.thicknessM !== null ? '4 3' : undefined}><title>{routeCloudBandTitle(band.band, unitSystem)}</title></rect>{#if band.extendsAboveChart}<path d={`M${band.x + band.width / 2 - 6},${crossSectionGeometry.plot.top + 9} l6,-8 l6,8 Z`} class="viewer-cloud-overflow-marker"><title>{band.band.upperBoundaryKnown ? '估算云顶超过 9000 米图框' : '可能云区延伸到图框以上，云顶未确定'}</title></path>{/if}{/each}{#each crossSectionGeometry.levelMarks as mark (`route-level-${mark.sampleIndex}-${mark.pressureHPa ?? '未知'}-${mark.heightM}`)}{#if routeDisplayVariable !== 'thickness'}<circle cx={mark.x} cy={mark.y} r="3.5" class={`viewer-level-mark ${mark.missing ? 'viewer-level-mark--missing' : ''}`}><title>{formatHeight(mark.heightM, 0, unitSystem)} · {mark.pressureHPa ?? '气压未知'} 百帕 · {mark.missing ? '缺测' : routeMetricValue(mark.value, unitSystem)}</title></circle>{/if}{/each}{#if routeDisplayVariable === 'temperature'}{#each routeFreezingMarks as mark, index (index)}<circle cx={mark.x} cy={mark.y} r="5" class="viewer-freezing-mark"><title>{mark.name} · 0°C 温度层估算 {formatHeight(mark.heightM, 0, unitSystem)} · 路线距离 {formatDistance(mark.distanceM, 1, unitSystem)}</title></circle>{/each}{/if}{#if routeTargetLine.line}<path d={routeTargetLine.line} class="viewer-target-line viewer-route-target-path"/>{/if}{#each routeTargetLine.points as targetPoint (`target-${targetPoint.sampleIndex}`)}<circle cx={targetPoint.x} cy={targetPoint.y} r={targetPoint.sampleIndex === routeFocusedIndex ? 6 : 3.5} class="viewer-route-target-point"/>{/each}{#if routeTerrainOverlay.area}<path d={routeTerrainOverlay.area} class="viewer-terrain-area"/>{/if}{#if routeTerrainOverlay.line}<path d={routeTerrainOverlay.line} class="viewer-terrain-line"/>{:else if crossSectionGeometry.terrainPath}<path d={crossSectionGeometry.terrainPath} class="viewer-terrain-line"/>{/if}{#if routeTerrainOverlay.highest && routeTerrainOverlay.highest.elevationM <= 9_000}<circle cx={routeTerrainOverlay.highest.x} cy={routeTerrainOverlay.highest.y} r="5" class="viewer-highest-dot"><title>路线最高地形采样点：{formatHeight(routeTerrainOverlay.highest.elevationM, 0, unitSystem)}</title></circle>{/if}{#each routeWindMarks as wind (wind.sampleIndex)}<g transform={`translate(${wind.x},${wind.y}) rotate(${windFlowRotationDeg(wind.directionDeg)})`}><line x1="-11" y1="0" x2="9" y2="0" class="viewer-wind-arrow" marker-end="url(#viewer-wind-arrow)"><title>{wind.name}：风速 {formatWind(wind.speedMs, 1, unitSystem)}；风来自 {formatWindDirection(wind.directionDeg)}</title></line></g>{/each}{#each crossSectionGeometry.sampleMarks as mark (mark.sampleIndex)}<line x1={mark.x} x2={mark.x} y1={crossSectionGeometry.plot.bottom} y2={crossSectionGeometry.plot.top} class={mark.sampleIndex === routeFocusedIndex ? 'viewer-sample-line viewer-sample-line--active' : 'viewer-sample-line'}/>{#if mark.sampleIndex === 0 || mark.sampleIndex === crossSectionGeometry.sampleMarks.length - 1 || crossSectionGeometry.sampleMarks.length <= 10}<text x={mark.labelX} y={crossSectionGeometry.plot.bottom + 28} text-anchor={mark.labelAnchor} class="viewer-axis-label">{formatDistance(mark.distanceM, 1, unitSystem)}</text>{/if}<rect x={mark.left} y={crossSectionGeometry.plot.top} width={mark.width} height={crossSectionGeometry.plot.bottom - crossSectionGeometry.plot.top} class="route-sample-hit" role="button" tabindex="0" aria-label={`查看${mark.name}，路线距离 ${formatDistance(mark.distanceM, 1, unitSystem)}`} on:click={() => selectRouteSample(mark.sampleIndex)} on:keydown={(event) => handleRouteSampleKeydown(event, mark.sampleIndex)}><title>选择{mark.name}查看逐层天气</title></rect>{/each}
 {#if Number.isFinite(Number(targetAltitudeM)) && Number(targetAltitudeM) >= 0 && Number(targetAltitudeM) <= crossSectionGeometry.maxHeightM}
 	{@const lineY = crossSectionGeometry.y(Number(targetAltitudeM))}
@@ -183,7 +193,7 @@
 
 {#if cloudSightlineEnabled && cloudSightline?.ok}
 <path d={cloudSightline.path} fill="none" stroke="#ffffff" stroke-width="3" pointer-events="none"><title>机位到目标的直达视线（几何曲率）</title></path>
-{#each cloudSightline.marks as mark (mark.index)}{#if mark.visible}<circle cx={mark.x} cy={mark.y} r="8" fill={mark.kind === 'cloud' ? '#ff4568' : mark.kind === 'humid' ? '#d976ff' : mark.kind === 'clear' ? '#ffffff' : '#8795a9'} stroke="#080e1b" stroke-width="2" role="button" tabindex="0" aria-label={mark.name + '：视线 ' + formatHeight(mark.heightM, 0, unitSystem) + '；' + mark.text} on:click|stopPropagation={() => selectRouteSample(mark.index)} on:keydown={(event) => handleRouteSampleKeydown(event, mark.index)}><title>{mark.name} · 视线 {formatHeight(mark.heightM, 0, unitSystem)} · {mark.text}</title></circle>{/if}{/each}
+{#each cloudSightline.marks as mark (mark.index)}{#if mark.visible}<circle cx={mark.x} cy={mark.y} r={mark.index === routeFocusedIndex ? 10 : 7} fill={mark.kind === 'cloud' ? (Number.isFinite(mark.values.cloudPct) && mark.values.cloudPct > 0 ? cloudCoverageColor(mark.values.cloudPct) : WEATHER_COLORS.evidence.estimatedCloud) : mark.kind === 'humid' ? '#d976ff' : mark.kind === 'clear' ? '#ffffff' : '#8795a9'} stroke={mark.index === routeFocusedIndex ? WEATHER_COLORS.series.humidity : '#080e1b'} stroke-width="2" role="button" tabindex="0" aria-label={mark.name + '：视线 ' + formatHeight(mark.heightM, 0, unitSystem) + '；' + mark.position.label + '；' + mark.text} on:click|stopPropagation={() => selectRouteSample(mark.index)} on:keydown={(event) => handleRouteSampleKeydown(event, mark.index)}><title>{mark.name} · 视线 {formatHeight(mark.heightM, 0, unitSystem)} · {mark.position.label} · {mark.text}</title></circle>{/if}{/each}
 {/if}
 </svg></div>
 					<div class="route-chart-note">{#if routeDisplayVariable === 'temperature'}<span><i class="freezing-level-key"></i>圆点为各分析点的 0°C 温度层估算高度</span>{/if}<span><i class="wind-arrow-key"></i>黄色箭头指向风的去向，位于查询高度</span><span>没有箭头表示该高度的风向未返回</span><span>点击图中采样列可查看该点完整逐层数值</span></div>
@@ -288,9 +298,17 @@
 	import WindyFavoritePlaces from './WindyFavoritePlaces.svelte';
 	import { normalizeWindyFavorites, favoriteAtMapPixel } from './lib/windy-favorites.js';
 	import CloudSightlinePanel from './CloudSightlinePanel.svelte';
+	import SightlineOverview from './SightlineOverview.svelte';
+	import RouteLibrary from './RouteLibrary.svelte';
 	import ExternalWeatherPanel from './ExternalWeatherPanel.svelte';
+	import SupplementProgress from './SupplementProgress.svelte';
+	import WeatherSourceInfo from './WeatherSourceInfo.svelte';
+	import { runRouteSupplements } from './lib/route-supplement.js';
+	import { withWeatherCapabilities } from './lib/weather-capabilities.js';
+	import { readWeatherPreferences, saveWeatherPreferences } from './lib/analysis-preferences.js';
 	import { loadExternalWeather, needsExternalWeather, externalValuesAt } from './lib/external-weather.js';
 	import { buildCloudSightline } from './lib/cloud-sightline.js';
+	import { describeCloudPosition } from './lib/cloud-position.js';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import HumidityGauge from './HumidityGauge.svelte';
 	import FavoritePlaces from './FavoritePlaces.svelte';
@@ -315,7 +333,7 @@
 	type RoutePoint = { id: string; name: string; nameSource?: 'automatic' | 'custom'; lat: number; lon: number; elevationM?: number };
 	type TerrainPoint = { lat: number; lon: number; distanceM: number; elevationM: number | null; elevationSource?: 'manual' | 'windy' | null };
 	type WeatherProfile = (ReturnType<typeof parseWindyProfile> | ReturnType<typeof parseWindyLegacyProfile> | ReturnType<typeof import("./lib/external-weather.js").parseExternalWeather>) & { dataSource?: string; verticalDataNotice?: string; servedModelSource?: 'response' | 'request' | 'unknown'; diagnosticAlternates?: WeatherProfile[] };
-	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; terrainSource?: 'manual' | 'windy' | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; supplement?: ReturnType<typeof import("./lib/external-weather.js").parseExternalWeather> | null; supplementError?: string; error?: string };
+	type RouteWeatherSample = { key: string; id?: string; name: string; lat: number; lon: number; distanceM: number; terrainElevationM: number | null; terrainSource?: 'manual' | 'windy' | null; profile: WeatherProfile | null; diagnosticProfile?: WeatherProfile | null; supplement?: ReturnType<typeof import("./lib/external-weather.js").parseExternalWeather> | null; supplementError?: string; supplementStatus?: string; error?: string };
 
 	const elevationCache = new Map<string, number | null>();
 	const weatherProfileCache = createMemoryCache({ ttlMs: 5 * 60_000, maxEntries: 96 });
@@ -331,6 +349,8 @@
 	let windyFavoritesStatus = '';
 	let windyFavoritesReadId = 0;
 	let lastFavoriteInterceptMs = 0;
+	let routeAnalysisSection: HTMLDivElement | null = null;
+	let currentRouteName = '';
 	let routeCoordinateText = '';
 	let routePointNameText = '';
 	let routeCoordinateError = '';
@@ -360,9 +380,17 @@
 	let routeAnalysisRunId = 0;
 	let routeAnalysisController: AbortController | null = null;
 	let routeWeatherReadAt = 0;
+	let routeWeatherRetentionNotice = '';
+	let routeWeatherRefreshPending = false;
 	let terrainReadKey = '';
 	let terrainGridIntervals = 0;
 	let routeWeatherProgress = 0;
+	let supplementRunning = false;
+	let supplementCompleted = 0;
+	let supplementTotal = 0;
+	let supplementNotice = '';
+	let supplementRunId = 0;
+	let supplementController: AbortController | null = null;
 	let routeWeatherError = '';
 	let routeDiagnosticSummaryCopyStatus = '';
 	let routeDiagnosticSummaryText = '';
@@ -411,16 +439,23 @@
 		: `${formatValue(actualForecastIntervalHours, Number.isInteger(actualForecastIntervalHours) ? 0 : 1, '')} 小时`;
 	$: routeEstimatedCoverage = routeContinuousClouds && (routeDisplayVariable === 'cloud' || routeDisplayVariable === 'thickness');
 	$: crossSectionGeometry = buildCrossSectionGeometry(routeWeatherSamples, effectiveForecastTimestampMs ?? Number.NaN, routeDisplayVariable, 9_000, routeChartWidth, routeChartHeight, routeEstimatedCoverage ? 'nearest' : 'samples');
-	$: routeTerrainKey = JSON.stringify(routePoints.map(point => [point.lat, point.lon, point.elevationM]));
+	$: routeTerrainKey = JSON.stringify({points:routePoints.map(point => [point.lat, point.lon, point.elevationM]),weatherPoints:analysisPoints.map(point=>[point.lat,point.lon])});
 	$: routeAnalysisReady = routeWeatherTimesMs.length > 0 && routeWeatherReadAt > 0 && terrainReadKey === routeTerrainKey
-		&& !routeWeatherError && !terrainError && !routeWeatherLoading && !terrainLoading;
+		&& !routeWeatherLoading && !terrainLoading;
+	$: savedRouteDraft = {name:currentRouteName,points:routePoints,settings:{provider:selectedProvider,model:selectedModel,samplingMode:routeSamplingMode,spacingM:routeWeatherSpacingM,count:analysisCount,
+		startElevationM:String(cloudSightlineStartText ?? '').trim() ? Number(cloudSightlineStartText) : null,
+		targetElevationM:String(cloudSightlineTargetText ?? '').trim() ? Number(cloudSightlineTargetText) : null,
+		eyeHeightM:Number(cloudSightlineEyeHeightM),queryHeightM:Number(targetAltitudeM),sightlineEnabled:cloudSightlineEnabled}};
 	$: resetCloudSightlineEndpoints(JSON.stringify(routePoints.map(point => [point.id, point.lat, point.lon, point.elevationM])));
 	$: cloudSightline = cloudSightlineEnabled ? buildCloudSightline(routePoints, routeWeatherSamples, effectiveForecastTimestampMs,
 		cloudSightlineStartText, cloudSightlineTargetText, cloudSightlineEyeHeightM, crossSectionGeometry) : null;
 	$: externalSightlineEvidence = cloudSightline?.ok ? cloudSightline.marks.map(mark => {
 		const sample = routeWeatherSamples[mark.index];
-		return {name:mark.name, ...externalValuesAt(sample?.supplement,effectiveForecastTimestampMs,mark.heightM,
-			mark.index === 0 ? cloudSightline.observerM - cloudSightlineEyeHeightM : mark.index === routeWeatherSamples.length - 1 ? cloudSightline.targetM : sample?.terrainElevationM), error:sample?.supplementError};
+		const terrainM = mark.index === 0 ? cloudSightline.observerM - cloudSightlineEyeHeightM : mark.index === routeWeatherSamples.length - 1 ? cloudSightline.targetM : sample?.terrainElevationM;
+		const data=externalValuesAt(sample?.supplement,effectiveForecastTimestampMs,mark.heightM,terrainM);
+		const modelGround=sample?.supplement?.modelElevationM;
+		const weatherGround=Number.isFinite(modelGround) ? Math.max(terrainM ?? -Infinity,modelGround) : terrainM;
+		return {name:mark.name,...data,position:describeCloudPosition(data.frame,mark.heightM,weatherGround,data.values),error:sample?.supplementError};
 	}) : [];
 	function resetCloudSightlineEndpoints(key: string) {
 		if (key === cloudSightlineEndpointKey) return;
@@ -623,13 +658,13 @@
 		}
 	}
 
-	async function loadWeatherProfile(point: { lat: number; lon: number }, model: ForecastModel, source: 'detail' | 'multiload', step: 1 | 3, signal: AbortSignal): Promise<WeatherProfile> {
+	async function loadWeatherProfile(point: { lat: number; lon: number }, model: ForecastModel, source: 'detail' | 'multiload', step: 1 | 3, signal: AbortSignal, bypassCache = false): Promise<WeatherProfile> {
 		abortIfNeeded(signal);
-		if (selectedProvider === 'open-meteo') return await loadExternalWeather(point,requestedForecastDays,signal,model) as WeatherProfile;
+		if (selectedProvider === 'open-meteo') return await loadExternalWeather(point,requestedForecastDays,signal,model,bypassCache) as WeatherProfile;
 		const cacheKey = pointForecastRequestKey(model, source, point, step);
-		const cached = weatherProfileCache.get(cacheKey);
+		const cached = bypassCache ? null : weatherProfileCache.get(cacheKey);
 		if (cached) return cached;
-		const profile = await fetchWeatherProfile(point, model, source, step, signal);
+		const profile = withWeatherCapabilities(await fetchWeatherProfile(point, model, source, step, signal));
 		abortIfNeeded(signal);
 		if (profile.ok && (!profile.servedModel || modelMatchesSelection(profile, model))) weatherProfileCache.set(cacheKey, profile);
 		return profile;
@@ -773,6 +808,22 @@
 		routeWeatherSamples = routeWeatherSamples.map(sample => sample.key === key ? { ...sample, name: point.name } : sample);
 	}
 
+	function useSavedRoute(event: CustomEvent) {
+		const route=event.detail;
+		currentRouteName=route.name;
+		resetRouteWeather(); cancelTerrain(); closeProfileViewer();
+		routePoints=route.points.map((point,index)=>({...point,id:route.id+'-'+Date.now()+'-'+index,nameSource:point.nameSource ?? 'custom'}));
+		terrainSamples=[]; terrainReadKey='';terrainError='';
+		selectedProvider=route.settings.provider;selectedModel=route.settings.model;
+		routeSamplingMode=route.settings.samplingMode;routeWeatherSpacingM=route.settings.spacingM;analysisCount=route.settings.count;
+		targetAltitudeM=route.settings.queryHeightM;cloudSightlineEyeHeightM=route.settings.eyeHeightM;
+		cloudSightlineEnabled=routePoints.length===2 && route.settings.sightlineEnabled;
+		cloudSightlineEndpointKey=JSON.stringify(routePoints.map(point=>[point.id,point.lat,point.lon,point.elevationM]));
+		cloudSightlineStartText=route.settings.startElevationM ?? '';cloudSightlineTargetText=route.settings.targetElevationM ?? '';
+		routeCoordinateError='';routeCoordinateStatus='已载入「'+route.name+'」；点击分析读取最新天气。';
+		try {const origin=routePoints[0].lon;map.fitBounds(routePoints.map(point=>[point.lat,point.lon+360*Math.round((origin-point.lon)/360)]),{padding:[32,32],maxZoom:12,animate:false});} catch { /* Route remains usable if map framing is unavailable. */ }
+		void tick().then(()=>routeAnalysisSection?.scrollIntoView({block:'start',behavior:'smooth'}));
+	}
 	function saveRouteWaypointFavorite(point: RoutePoint) {
 		const result = saveFavoritePlace(point);
 		routeFavoriteStatus = result.ok
@@ -790,6 +841,7 @@
 	}
 
 	function appendRoutePoint(point: { name?: string; lat: number; lon: number; elevationM?: number }) {
+		currentRouteName='';
 		resetRouteWeather();
 		cancelTerrain();
 		routeCoordinateStatus = '';
@@ -1230,15 +1282,13 @@
 		forecastStep = step;
 		// Changing the interval invalidates the route results.
 		resetRouteWeather();
-		if (routePoints.length >= 2) {
-			void loadRouteProfile();
-		}
+
 	}
 
 	function changeForecastTime(timestamp: number) {
 		if (!Number.isFinite(timestamp)) return;
 		selectedForecastTimestampMs = timestamp;
-		store.set('timestamp', timestamp);
+		if(selectedProvider === 'windy') store.set('timestamp', timestamp);
 	}
 
 	function handleForecastTimeChange(event: Event) {
@@ -1263,6 +1313,7 @@
 	function resetRouteWeather() {
 		cancelUnifiedRouteAnalysis(false);
 		routeWeatherReadAt = 0;
+		routeWeatherRetentionNotice = ''; routeWeatherRefreshPending = false;
 		routeWeatherRequestController?.abort();
 		routeWeatherRequestController = null;
 		activeRouteWeatherRun += 1;
@@ -1274,19 +1325,20 @@
 		routeDiagnosticSummaryCopyStatus = '';
 		routeDiagnosticSummaryText = '';
 		routeFocusedIndex = 0;
+		supplementNotice = ""; supplementCompleted = 0; supplementTotal = 0;
 	}
 
 	function selectProvider(provider: 'windy' | 'open-meteo') {
 		if (selectedProvider === provider) return;
 		selectedProvider = provider;
 		resetRouteWeather();
-		if (routePoints.length >= 2) void loadRouteProfile();
+
 	}
 	function selectModel(model: ForecastModel) {
 		if (selectedModel === model) return;
 		selectedModel = model;
 		resetRouteWeather();
-		if (routePoints.length >= 2) void loadRouteProfile();
+
 	}
 
 	function routeDiagnosticStatus(sample: RouteWeatherSample) {
@@ -1300,8 +1352,8 @@
 	function buildRouteDiagnosticSummary(sample: RouteWeatherSample) {
 		const profileForSummary = sample.diagnosticProfile ?? sample.profile ?? {
 			ok: false,
-			error: sample.error || 'Windy 请求未返回可解析的天气剖面',
-			dataSource: 'windy-point-forecast-v3',
+			error: sample.error || `${weatherSourceLabel} 未返回可解析的天气剖面`,
+			dataSource: selectedProvider === 'windy' ? 'windy-point-forecast-v3' : 'open-meteo',
 			requestedModel: selectedModel,
 			servedModel: null,
 			servedModelSource: 'unknown',
@@ -1310,7 +1362,7 @@
 			responseArrays: {},
 		};
 		const timestampMs = effectiveForecastTimestampMs ?? selectedForecastTimestampMs ?? profileForSummary.timestampsMs?.[0] ?? null;
-		return `路线分析点：${sample.name} · 沿线 ${formatDistance(sample.distanceM, 1, unitSystem)}\n\n${buildProfileDiagnosticSummary(profileForSummary, timestampMs, sample.terrainElevationM)}\n\n外部独立补充：${sample.supplement ? `Open-Meteo GFS；有效时次 ${sample.supplement.timestampsMs.length} 个；未与 Windy 合并` : sample.supplementError || "未读取／无需补充"}`;
+		return `${routeWeatherRetentionNotice ? routeWeatherRetentionNotice + '\n\n' : ''}路线分析点：${sample.name} · 沿线 ${formatDistance(sample.distanceM, 1, unitSystem)}\n\n${buildProfileDiagnosticSummary(profileForSummary, timestampMs, sample.terrainElevationM)}\n\n外部独立补充：${sample.supplement ? `Open-Meteo GFS；有效时次 ${sample.supplement.timestampsMs.length} 个；未与 Windy 合并` : sample.supplementError || "未读取／无需补充"}`;
 	}
 
 	async function copyRouteDiagnosticSummary(sample: RouteWeatherSample) {
@@ -1330,7 +1382,7 @@
 	async function copyAllRouteDiagnosticSummaries() {
 		routeDiagnosticSummaryCopyStatus = '';
 		routeDiagnosticSummaryText = '';
-		const summary = `Windy 路线天气数据诊断摘要（${routeWeatherSamples.length} 个分析点）\n\n${routeWeatherSamples.map(buildRouteDiagnosticSummary).join('\n\n' + '─'.repeat(36) + '\n\n')}`;
+		const summary = `${weatherSourceLabel} 路线天气数据诊断摘要（${routeWeatherSamples.length} 个分析点）\n\n${routeWeatherSamples.map(buildRouteDiagnosticSummary).join('\n\n' + '─'.repeat(36) + '\n\n')}`;
 		if (await copyTextToClipboard(summary)) {
 			routeDiagnosticSummaryCopyStatus = `已复制全部 ${routeWeatherSamples.length} 个分析点的摘要（不含天气数值或坐标）`;
 			return;
@@ -1353,7 +1405,7 @@
 		return profiles[0].timestampsMs.filter(timestamp => profiles.every(profile => profile.timestampsMs.some(candidate => Math.abs(candidate - timestamp) <= 1_000)));
 	}
 
-	async function loadRouteProfile() {
+	async function loadRouteProfile(bypassCache = false) {
 		if (routePoints.length < 2 || routeWeatherLoading) return;
 		const runId = ++activeRouteWeatherRun;
 		const requestedPoints = analysisPoints.map((point, index) => ({
@@ -1361,7 +1413,6 @@
 			name: point.name ?? (index === 0 ? '起点' : index === analysisPoints.length - 1 ? '终点' : `分析点 ${index + 1}`),
 		}));
 		const model = selectedModel;
-		const provider = selectedProvider;
 		const step = forecastStep;
 		if (requestedPoints.length < 2) {
 			routeWeatherError = '路线至少需要两个分析点';
@@ -1372,10 +1423,13 @@
 		routeWeatherLoading = true;
 		routeWeatherError = '';
 		routeWeatherProgress = 0;
+		const retainPrevious = routeWeatherSamples.some(sample=>sample.profile?.ok || sample.supplement?.ok);
+		routeWeatherRefreshPending = retainPrevious;
+		routeWeatherRetentionNotice = retainPrevious ? `正在刷新；当前显示上次结果（读取于 ${formatForecastTime(routeWeatherReadAt)} 北京时间），本次成功后统一替换。` : '';
 		// Retain every planned location while requests finish or are cancelled.
 		// Otherwise continuous coverage could spread a completed point over unread kilometres.
-		routeWeatherSamples = requestedPoints.map(point => ({ ...point, key: `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`, terrainElevationM: null, profile: null, error: '尚未读取' }));
-		routeWeatherTimesMs = [];
+		let nextSamples: RouteWeatherSample[] = requestedPoints.map(point => ({ ...point, key: `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`, terrainElevationM: null, profile: null, error: '尚未读取' }));
+		if (!retainPrevious) { routeWeatherSamples = nextSamples; routeWeatherTimesMs = []; }
 		routeDiagnosticSummaryCopyStatus = '';
 		routeDiagnosticSummaryText = '';
 		let routeRateLimited = false;
@@ -1384,49 +1438,46 @@
 			const key = `${point.lat.toFixed(5)},${point.lon.toFixed(5)}`;
 			let profile: WeatherProfile | null = null;
 			let diagnosticProfile: WeatherProfile | null = null;
-			let supplement = null;
-			let supplementError = "";
+
 			let terrainElevationM: number | null = null;
 			const latestWaypoint = routeWaypointAt(point);
 			const manualElevationM = Number.isFinite(latestWaypoint?.elevationM) ? latestWaypoint.elevationM : null;
 			let error = '';
 			try {
-				const parsed = await loadWeatherProfile(point, model, 'multiload', step, requestController.signal);
+				const parsed = await loadWeatherProfile(point, model, 'multiload', step, requestController.signal,bypassCache);
 				if (runId !== activeRouteWeatherRun) return null;
 				diagnosticProfile = parsed;
 				if (parsed.ok && parsed.servedModel && modelMatchesSelection(parsed, model)) profile = parsed;
 				else if (parsed.ok) error = parsed.servedModel
-					? `所选 ${model.toUpperCase()}，Windy 实际返回 ${parsed.servedModel}，此点未纳入路线剖面`
-					: 'Windy 未返回实际模式，此点未纳入路线剖面';
+					? `所选 ${model.toUpperCase()}，${weatherSourceLabel} 实际返回 ${parsed.servedModel}，此点未纳入路线剖面`
+					: `${weatherSourceLabel} 未返回实际模式，此点未纳入路线剖面`;
 				else error = [parsed.error, parsed.verticalDataNotice].filter(Boolean).join('；');
 			} catch (requestError) {
 				error = isWindyRateLimit(requestError) ? `${weatherSourceLabel} 请求频率达到限制` : requestError instanceof Error ? requestError.message : String(requestError);
 				if (isWindyRateLimit(requestError)) routeRateLimited = true;
 			}
 			if (runId !== activeRouteWeatherRun || requestController.signal.aborted) return null;
-			if (provider === 'windy' && externalSupplementEnabled && !routeRateLimited && needsExternalWeather(profile)) {
-				try { supplement = await loadExternalWeather(point, requestedForecastDays, requestController.signal); }
-				catch (externalError) { supplementError = externalError instanceof Error ? externalError.message : String(externalError); }
-			}
-			if (runId !== activeRouteWeatherRun || requestController.signal.aborted) return null;
 			if (manualElevationM !== null) terrainElevationM = manualElevationM;
-			else if (!routeRateLimited) {
-				try {
-					terrainElevationM = payloadNumber(await withWindyRequestLimit(signal => getElevation(point.lat, point.lon, { abortSignal: signal }), elevationRequestKey(point), requestController.signal));
-					if (runId === activeRouteWeatherRun && Number.isFinite(terrainElevationM)) elevationCache.set(key, terrainElevationM);
-				} catch {
-					terrainElevationM = null;
-				}
-			}
+			else { const cachedTerrain = elevationCache.get(requestCoordinateKey(point)); terrainElevationM = Number.isFinite(cachedTerrain) ? cachedTerrain : null; }
 			const terrainSource = manualElevationM !== null ? 'manual' : Number.isFinite(terrainElevationM) ? 'windy' : null;
-			const sample: RouteWeatherSample = { key, ...point, name: latestWaypoint?.name ?? point.name, terrainElevationM, terrainSource, profile, diagnosticProfile, supplement, supplementError, error: error || undefined };
-			routeWeatherSamples = [...routeWeatherSamples.filter(item => item.key !== key), sample].sort((a, b) => a.distanceM - b.distanceM);
-			routeWeatherTimesMs = commonRouteTimes(routeWeatherSamples);
+			const sample: RouteWeatherSample = { key, ...point, name: latestWaypoint?.name ?? point.name, terrainElevationM, terrainSource, profile, diagnosticProfile, error: error || undefined };
+			nextSamples = [...nextSamples.filter(item => item.key !== key), sample].sort((a, b) => a.distanceM - b.distanceM);
+			if (!retainPrevious) {routeWeatherSamples = nextSamples; routeWeatherTimesMs = commonRouteTimes(nextSamples);}
 			routeWeatherProgress += 1;
 			return sample;
 		}, () => runId !== activeRouteWeatherRun || routeRateLimited);
 		if (runId !== activeRouteWeatherRun) return;
 		if (routeWeatherRequestController === requestController) routeWeatherRequestController = null;
+		const nextTimes = commonRouteTimes(nextSamples);
+		if (retainPrevious && (nextSamples.some(sample=>!sample.profile?.ok) || !nextTimes.length)) {
+			routeWeatherRefreshPending = false; routeWeatherLoading = false;
+			routeWeatherRetentionNotice = `刷新未完成；仍显示上次结果（读取于 ${formatForecastTime(routeWeatherReadAt)} 北京时间），不是本次新数据。`;
+			const failures = nextSamples.filter(sample=>!sample.profile?.ok);
+			routeWeatherError = `本次刷新未替换旧结果：${failures.length ? `${failures.length}/${nextSamples.length} 个点未成功；${failures[0].error || '资料不足'}` : '没有共同有效预报时次'}。成功请求已进入天气缓存，旧结果不与本次部分结果混合。`;
+			return;
+		}
+		routeWeatherSamples = nextSamples;
+		routeWeatherRefreshPending = false; routeWeatherRetentionNotice = '';
 		routeWeatherTimesMs = commonRouteTimes(routeWeatherSamples);
 		if (routeRateLimited) routeWeatherError = `${weatherSourceLabel} 请求达到频率限制，已停止后续采样。当前完成 ${routeWeatherProgress}/${requestedPoints.length} 个天气点；稍后可重新读取。`;
 		else if (routeWeatherSamples.every(sample => !sample.profile?.ok && !sample.supplement?.ok)) routeWeatherError = `${weatherSourceLabel} 未返回任何可用路线天气剖面`;
@@ -1437,11 +1488,35 @@
 		routeWeatherReadAt = Date.now();
 	}
 
+	function cancelRouteSupplements(notify = true) {
+		const wasRunning = supplementRunning;
+		supplementRunId++; supplementController?.abort(); supplementController = null;
+		supplementRunning = false;
+		routeWeatherSamples = routeWeatherSamples.map(sample => sample.supplementStatus === 'loading' ? {...sample,supplementStatus:'cancelled',supplementError:'补查已取消，未完成字段保持未知'} : sample);
+		if (notify && wasRunning) supplementNotice = '补查已取消；主结果和已完成补充保留。';
+	}
+	async function startRouteSupplements(bypassCache = false) {
+		if (selectedProvider !== 'windy' || !externalSupplementEnabled || routeWeatherLoading || terrainLoading || supplementRunning || !routeWeatherSamples.length) return;
+		const id = ++supplementRunId, controller = new AbortController();
+		supplementController = controller; supplementRunning = true; supplementNotice = '';
+		const timestampMs = effectiveForecastTimestampMs;
+		const samples = routeWeatherSamples.map(sample=>({...sample}));
+		const heights = samples.map((sample,index)=>cloudSightline?.ok ? cloudSightline.marks[index]?.heightM ?? Number(targetAltitudeM) : Number(targetAltitudeM));
+		try {
+			await runRouteSupplements(samples,{days:requestedForecastDays,timestampMs,heightForSample:index=>heights[index],signal:controller.signal,bypassCache,
+				onSample:(key,patch)=>{if(id === supplementRunId && !controller.signal.aborted) {routeWeatherSamples = routeWeatherSamples.map(sample=>sample.key === key ? {...sample,...patch} : sample);routeWeatherTimesMs=commonRouteTimes(routeWeatherSamples);}},
+				onProgress:(done,total)=>{if(id === supplementRunId) {supplementCompleted=done;supplementTotal=total;}}
+			});
+			if(id === supplementRunId) supplementNotice = supplementTotal ? '独立补查已结束；失败或无数据的点仍保持未知，可重试。' : '当前时次与查询高度无需补查。';
+		} catch (error) {if(id === supplementRunId && !controller.signal.aborted) supplementNotice = error instanceof Error ? error.message : '补查未完成，已有数据保留';}
+		finally {if(id === supplementRunId) {supplementRunning=false;supplementController=null;}}
+	}
 	function cancelUnifiedRouteAnalysis(notify = true) {
-		const wasRunning = routeAnalysisRunning || routeWeatherLoading || terrainLoading;
+		const wasRunning = routeAnalysisRunning || routeWeatherLoading || terrainLoading || supplementRunning;
 		routeAnalysisRunId++;
 		routeAnalysisController?.abort(); routeAnalysisController = null;
 		routeAnalysisRunning = false;
+		cancelRouteSupplements(notify);
 		cancelRouteProfile(); cancelTerrain();
 		routeAnalysisNotice = notify && wasRunning ? '已取消分析；已完成数据保留，未完成位置仍为缺测。' : '';
 	}
@@ -1470,10 +1545,12 @@
 		routeAnalysisNotice = ''; routeAnalysisStage = 'weather';
 		try {
 			if (refresh || !routeWeatherReadAt || Date.now() - routeWeatherReadAt >= 5 * 60_000) {
-				await waitRouteAnalysisPhase(loadRouteProfile(), controller.signal);
+				await waitRouteAnalysisPhase(loadRouteProfile(refresh), controller.signal);
 			}
 			if (id !== routeAnalysisRunId || controller.signal.aborted) return;
-			if (!routeWeatherTimesMs.length) { routeAnalysisNotice = '没有可用的共同天气时次，请检查数据提示后重新分析。'; return; }
+			openProfileViewer('route',undefined,false);
+			if (routeWeatherRetentionNotice) {routeAnalysisNotice = '刷新未成功，已保留上一批天气和地形结果。'; return;}
+			if (!routeWeatherTimesMs.length && !(selectedProvider === 'windy' && externalSupplementEnabled)) { routeAnalysisNotice = '主来源没有可用的共同天气时次；已收到的部分结果保留。'; return; }
 			if (refresh || terrainReadKey !== routeTerrainKey) {
 				routeAnalysisStage = 'terrain';
 				await waitRouteAnalysisPhase(loadRouteTerrain(), controller.signal);
@@ -1482,17 +1559,22 @@
 			routeAnalysisNotice = terrainError || routeWeatherError ? '分析完成，部分数据缺测；已保留有效结果。' : '分析完成。';
 			// Async completion loses browser fullscreen activation. The existing
 			// fixed viewport viewer still fills the Windy page without another click.
-			openProfileViewer('route', undefined, false);
+			// The viewer was opened as soon as primary weather completed.
 		} catch (failure) {
 			if (id !== routeAnalysisRunId || controller.signal.aborted) return;
 			cancelRouteProfile(); cancelTerrain();
 			routeAnalysisNotice = (failure as Error).message;
 		} finally {
-			if (id === routeAnalysisRunId) { routeAnalysisRunning = false; routeAnalysisController = null; }
+			if (id === routeAnalysisRunId) { routeAnalysisRunning = false; routeAnalysisController = null; if(!controller.signal.aborted && !routeWeatherRetentionNotice) void startRouteSupplements(refresh); }
 		}
 	}
 
 	function cancelRouteProfile() {
+		if (routeWeatherRefreshPending) {
+			routeWeatherRetentionNotice = `刷新已取消；仍显示上次结果（读取于 ${formatForecastTime(routeWeatherReadAt)} 北京时间），未替换为本次部分结果。`;
+			routeWeatherRefreshPending = false;
+		}
+		cancelRouteSupplements(false);
 		activeRouteWeatherRun += 1;
 		routeWeatherRequestController?.abort();
 		routeWeatherRequestController = null;
@@ -1503,13 +1585,18 @@
 		if (typeof payload === 'number' && Number.isFinite(payload)) return payload;
 		if (payload && typeof payload === 'object') {
 			const record = payload as Record<string, unknown>;
-			const candidate = Number(record.data ?? record.value ?? record.elevation);
-			if (Number.isFinite(candidate)) return candidate;
+			const raw = record.data ?? record.value ?? record.elevation;
+			if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+			if (typeof raw === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw.trim())) {
+				const candidate = Number(raw.trim());
+				return Number.isFinite(candidate) ? candidate : null;
+			}
 		}
 		return null;
 	}
 
 	function undoRoutePoint() {
+		currentRouteName='';
 		resetRouteWeather();
 		cancelTerrain();
 		routePoints = normalizeRoutePointNames(routePoints.slice(0, -1));
@@ -1518,6 +1605,7 @@
 	}
 
 	function clearRoute() {
+		currentRouteName='';
 		resetRouteWeather();
 		cancelTerrain();
 		routePoints = [];
@@ -1527,6 +1615,11 @@
 		routeCoordinateStatus = '';
 	}
 
+	function applyWeatherTerrain(point: {lat:number;lon:number}, elevationM: number | null, terrainSource: 'manual' | 'windy' | null) {
+		if (!Number.isFinite(elevationM)) return;
+		const key=requestCoordinateKey(point);
+		routeWeatherSamples=routeWeatherSamples.map(sample=>requestCoordinateKey(sample)===key ? {...sample,terrainElevationM:elevationM,terrainSource} : sample);
+	}
 	async function loadRouteTerrain() {
 		if (routePoints.length < 2 || terrainLoading) return;
 		const runId = ++activeTerrainRun;
@@ -1535,7 +1628,9 @@
 		const readKey = routeTerrainKey;
 		terrainReadKey = '';
 		// Bound automatic work on long routes while retaining exact waypoints.
-		const samples = samplePolyline(routePoints, Math.max(250, routeDistanceM / 800));
+		const terrainGrid = samplePolyline(routePoints, Math.max(250, routeDistanceM / 800));
+		const gridKeys = new Set(terrainGrid.map(point=>requestCoordinateKey(point)));
+		const samples = [...terrainGrid,...routeWeatherSamples.filter(point=>!gridKeys.has(requestCoordinateKey(point))).map(point=>({lat:point.lat,lon:point.lon,distanceM:point.distanceM}))].sort((a,b)=>a.distanceM-b.distanceM);
 		terrainGridIntervals = Math.max(1, Math.ceil(routeDistanceM / Math.max(250, routeDistanceM / 800)));
 		let terrainRateLimited = false;
 		terrainLoading = true;
@@ -1552,17 +1647,20 @@
 				const waypoint = routeWaypointAt(point);
 				if (Number.isFinite(waypoint?.elevationM)) {
 					terrainSamples = terrainSamples.map((sample, position) => position === start + index ? { ...point, elevationM: waypoint.elevationM, elevationSource: 'manual' } : sample);
+					applyWeatherTerrain(point,waypoint.elevationM,'manual');
 					terrainProgress += 1;
 					return { ...point, elevationM: waypoint.elevationM, elevationSource: 'manual' as const };
 				}
 				try {
-					let elevationM = elevationCache.get(key);
+					const terrainCacheKey = requestCoordinateKey(point);
+					let elevationM = elevationCache.get(terrainCacheKey);
 					if (elevationM === undefined) {
 						elevationM = payloadNumber(await withWindyRequestLimit(signal => getElevation(point.lat, point.lon, { abortSignal: signal }), elevationRequestKey(point), requestController.signal));
-						if (Number.isFinite(elevationM)) elevationCache.set(key, elevationM);
+						if (Number.isFinite(elevationM)) elevationCache.set(terrainCacheKey, elevationM);
 					}
 					if (runId !== activeTerrainRun) return null;
 					terrainSamples = terrainSamples.map((sample, position) => position === start + index ? { ...point, elevationM, elevationSource: Number.isFinite(elevationM) ? 'windy' : null } : sample);
+					applyWeatherTerrain(point,elevationM,Number.isFinite(elevationM) ? 'windy' : null);
 					terrainProgress += 1;
 					return { ...point, elevationM, elevationSource: Number.isFinite(elevationM) ? 'windy' as const : null };
 				} catch (failure) {
@@ -1604,16 +1702,21 @@
 		const timestamp = Number(store.get('timestamp'));
 		windyTimestampMs = Number.isFinite(timestamp) ? timestamp : null;
 		const product = store.get('product');
-		selectedModel = product === 'icon' ? 'icon' : 'ecmwf';
+		const preferences = readWeatherPreferences();
+		selectedModel = preferences?.model ?? (product === 'icon' ? 'icon' : 'ecmwf');
+		selectedProvider = preferences?.provider ?? 'windy';
+		externalSupplementEnabled = preferences?.supplement ?? true;
+		forecastStep = preferences?.step ?? 1;
 		forecastContextReady = true;
 		timestampListenerId = store.on('timestamp', value => {
 			const nextTimestamp = Number(value);
 			if (!Number.isFinite(nextTimestamp)) return;
 			windyTimestampMs = nextTimestamp;
+			if(selectedProvider !== 'windy') return;
 			const times = routeWeatherTimesMs;
 			selectedForecastTimestampMs = times.length ? nearestTimestamp(times, nextTimestamp) : nextTimestamp;
 		});
-		productListenerId = store.on('product', value => selectModel(value === 'icon' ? 'icon' : 'ecmwf'));
+		// Plugin model choice stays independent from Windy map-layer changes.
 		singleclick.on(config.name, handleMapClick);
 		void loadWindyFavorites();
 		document.addEventListener('pointerdown', captureAltFavoriteDown, true);
@@ -1623,6 +1726,7 @@
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 	});
 
+	$: if (forecastContextReady) saveWeatherPreferences({provider:selectedProvider,model:selectedModel,supplement:externalSupplementEnabled,step:forecastStep});
 	$: if (routeLayer) drawMapItems(routePoints);
 
 		onDestroy(() => {

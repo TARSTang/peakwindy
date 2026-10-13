@@ -1,5 +1,6 @@
 <script>
   import { externalValuesAt } from './lib/external-weather.js';
+  import WeatherSourceInfo from './WeatherSourceInfo.svelte';
   import { frameAtTimestamp, interpolateAtHeight, formatForecastTime } from './lib/profile.js';
   import { heightToDisplay, heightUnit, temperatureToDisplay, temperatureUnit, windToDisplay, windUnit, precipitationToDisplay, precipitationUnit } from './lib/units.js';
   export let sample;
@@ -21,6 +22,8 @@
 <section aria-label="外部缺测补充">
   <h3>{sample?.name ?? '当前点'} · 外部缺测补充</h3>
   <p class="source">Open-Meteo · GFS · 独立模式参考，不并入 Windy 图表</p>
+  {#if sample?.supplementStatus === 'loading'}<p role="status">当前点 GFS 补查中；已收到的数据保留。</p>{/if}
+  {#if sample?.supplementStatus === 'cancelled' || sample?.supplementStatus === 'error'}<p role="status">{sample.supplementError}</p>{/if}
   {#if sample?.supplement}
     <p>查询海拔 {show(heightToDisplay(heightM,unitSystem),heightUnit(unitSystem),0)} · {result.times.length ? result.times.map(t=>formatForecastTime(t)).join(' ～ ') + ' 北京时间' : '该时刻不在补充预报有效范围'}</p>
     {#if result.times.length > 1}<p>云量、湿度取两侧有效时次较大值；温度、风和地面值不跨时次补造。</p>{/if}
@@ -28,6 +31,7 @@
       <div><dt>地面能见度 · 非高空值</dt><dd>{show(result.frame?.surfaceVisibilityM,'米',0)}</dd></div>
       <div><dt>雪降水水当量 · 1 小时累计</dt><dd>{show(precipitationToDisplay(result.frame?.precipSnowAmountMm,unitSystem),precipitationUnit(unitSystem))}</dd></div>
     </dl>
+    <WeatherSourceInfo profile={sample.supplement} provider="open-meteo" model="gfs" {timestampMs} terrainM={sample?.terrainElevationM} {unitSystem}/>
     <p class="limit">保留 GFS 自身地表边界；有效相邻气压层之间插值，缺层不跨越。小时接口时次不代表原始模式小时分辨率，起报时间未返回。完整云底和逐层能见度未提供；缺测不代表无云。</p>
   {:else}<p>{sample?.supplementError || '无需补充或尚未读取补充数据。'}</p>{/if}
   <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">天气数据：Open-Meteo（CC BY 4.0）</a>

@@ -1,4 +1,5 @@
 import { heightToDisplay, heightUnit } from './units.js';
+import { weatherDiagnosticLines } from './weather-diagnostics.js';
 
 const LEVEL_FIELD = /^(?:gh|cloud|temp|wind|windDir|rh|dewPoint)-(\d+)h$/i;
 const PROFILE_VALUE_FIELDS = ['temperatureC', 'dewPointC', 'relativeHumidityPct', 'windSpeedMs', 'windDirectionDeg', 'cloudPct'];
@@ -619,6 +620,7 @@ function unframedProfileDiagnosticSummary(profile) {
 		'来源声明的气压层：' + (availableLevels.length ? availableLevels.map(String).join('、') + '（层级元数据，不代表已有对应天气值）' : '未提供'),
 	];
 	appendPointForecastGroupDiagnostics(lines, profile);
+	lines.push(...weatherDiagnosticLines(profile));
 	lines.push('响应字段形状与有效数量（不含原始值）：');
 	const fields = responseArrayShapeLines(profile?.responseArrays);
 	lines.push(...(fields.length ? fields : ['未发现可诊断的响应数组字段。']));
@@ -630,8 +632,9 @@ export function buildProfileDiagnosticSummary(profile, timestampMs, terrainEleva
 	if (!profile || !Array.isArray(profile.frames) || !profile.frames.length) {
 		return unframedProfileDiagnosticSummary(profile);
 	}
-	const frameIndex = closestTimeIndex(profile.timestampsMs, timestampMs);
-	const frame = profile.frames[frameIndex];
+	const timeIndex = closestTimeIndex(profile.timestampsMs, timestampMs);
+	const frame = frameAtTimestamp(profile.frames, profile.timestampsMs[timeIndex]);
+	const frameIndex = profile.frames.indexOf(frame);
 	if (!frame) return unframedProfileDiagnosticSummary(profile);
 	const rawTimeIndex = Number.isInteger(frame.sourceTimeIndex) ? frame.sourceTimeIndex : frameIndex;
 
@@ -648,6 +651,7 @@ export function buildProfileDiagnosticSummary(profile, timestampMs, terrainEleva
 		'来源声明的气压层：' + ((profile.availableLevelNames?.length ? profile.availableLevelNames : (profile.pressureLevels?.map(level => String(level) + 'h') ?? [])).join('、') || '无'),
 		'本时次解析出带高度的气压层：' + (frame.levels?.length ?? 0) + ' 层',
 	];
+	lines.push(...weatherDiagnosticLines(profile,frame));
 	appendPointForecastGroupDiagnostics(lines, profile);
 	const sourceTimeAxes = ['data', 'header', 'meteogram', 'airgram', 'sounding'].flatMap(source => {
 		const arrays = profile.responseArrays?.[source];

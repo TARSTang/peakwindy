@@ -1,3 +1,5 @@
+import { profileProvenance } from './profile.js';
+
 function timeBracket(profile, timestampMs) {
 	const frames = (profile?.frames ?? [])
 		.filter(frame => Number.isFinite(frame.timestampMs))
@@ -13,6 +15,7 @@ function timeBracket(profile, timestampMs) {
 }
 
 export function assessGroundFog(profile, timestampMs) {
+	const source = profileProvenance(profile).source;
 	const bracket = timeBracket(profile, timestampMs);
 	if (!bracket.ok) {
 		return {
@@ -47,10 +50,10 @@ export function assessGroundFog(profile, timestampMs) {
 	const nearSaturated = saturationSignals.length > 0 && saturationSignals.every(Boolean);
 
 	let status = 'unknown';
-	let reason = 'Windy 未返回足够的地面能见度或近地层温湿数据，不能排除雾。';
+	let reason = `${source} 的能见度资料不足，不能排除雾。`;
 	if (fogWarningCodes.length) {
 		status = 'blocked';
-		reason = `Windy 返回雾现象代码 ${fogWarningCodes.join('/')}，对应时段存在地面雾信号。`;
+		reason = `${source} 返回雾现象代码 ${fogWarningCodes.join('/')}，对应时段存在地面雾信号。`;
 	} else if (visibilityM !== null && visibilityM <= 1_000) {
 		status = 'possible';
 		reason = `地面水平能见度 ${Math.round(visibilityM)} 米；存在雾或其他低能见度信号，模型不能确认成因。`;

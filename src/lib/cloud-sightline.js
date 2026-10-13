@@ -1,5 +1,6 @@
 import { distanceMeters } from './route.js';
-import { frameAtTimestamp, interpolateAtHeight, humidityCloudBands, directCloudLayerBands, explainProfileQuery } from './profile.js';
+import { frameAtTimestamp, interpolateAtHeight, explainProfileQuery } from './profile.js';
+import { describeCloudPosition } from './cloud-position.js';
 
 const R = 6371008.8;
 function heightInput(text, fallback) {
@@ -16,7 +17,7 @@ export function cloudSightlineHeight(distanceM, observerM, targetM, fraction) {
 	return a * b * Math.sin(angle) / (b * Math.sin(angle * (1 - fraction)) + a * Math.sin(angle * fraction)) - R;
 }
 
-export function buildCloudSightline(points, samples, timestampMs, startText, targetText, eyeHeightM, geometry) {
+export function buildCloudSightline(points, samples, timestampMs, startText, targetText, eyeHeightM, geometry, summaryOnly = false) {
 	const empty = reason => ({ ok: false, reason, path: '', marks: [], cloudCount: 0, humidCount: 0, unknownCount: 0 });
 	if (points?.length !== 2) return empty('请仅保留两个路线点：首点为机位，末点为雪山。转折路线不能当作直达视线。');
 	const distanceM = distanceMeters(points[0], points[1]);
@@ -42,23 +43,28 @@ export function buildCloudSightline(points, samples, timestampMs, startText, tar
 		const modelGround = sample.profile?.modelElevationM;
 		const weatherGround = Number.isFinite(modelGround) ? Math.max(terrainM ?? -Infinity, modelGround) : terrainM;
 		const values = interpolateAtHeight(frame, heightM, weatherGround);
-		const band = directCloudLayerBands(frame, weatherGround).some(item => heightM >= item.lowHeightM && heightM <= item.highHeightM);
-		const humid = values.humidityPct >= 90 || humidityCloudBands(frame, weatherGround).some(item => heightM >= item.lowHeightM && heightM <= item.highHeightM);
+		const position = describeCloudPosition(frame,heightM,weatherGround,values);
+		const band = position.cloudIntersects;
+		const humid = values.humidityPct >= 90 || position.humidityIntersects;
 		let kind = 'unknown', text = '该视线高度云量缺测';
 		if (!frame) text = '所选时次缺测';
 		else if (values.reason === 'below-terrain') text = `视线 ${Math.round(heightM)} 米低于天气有效地表边界 ${Math.round(weatherGround)} 米（含模式地形），无有效高空天气；本功能不判断地形通视`;
-		else if (Number.isFinite(values.cloudPct) && values.cloudPct > 0) { kind = 'cloud'; text = `视线高度模式云量 ${Math.round(values.cloudPct)}%，存在云层相交信号`; }
+		else if (Number.isFinite(values.cloudPct) && values.cloudPct > 0) { kind = 'cloud'; text = `视线高度模式云量 ${values.cloudPct < 0.1 ? '小于 0.1' : values.cloudPct.toFixed(1)}%，存在云层相交信号`; }
 		else if (band) { kind = 'cloud'; text = '视线落在模式云层估算范围内；该高度云量可能缺测'; }
 		else if (humid) { kind = 'humid'; text = values.cloudPct === 0 ? '模式云量为 0%，但存在高湿信号，不能确认无云' : '存在高湿可能云区信号，不能确认实际有云'; }
-		else if (values.cloudPct === 0 && Number.isFinite(terrainM)) { kind = 'clear'; text = '该采样点视线高度模式云量为 0%；不保证实况可见'; }
+		else if (values.cloudPct === 0 && Number.isFinite(terrainM) && Number.isFinite(values.humidityPct) && position.relation !== 'unknown') { kind = 'clear'; text = '该采样点视线高度模式云量为 0%；不保证实况可见'; }
 		else if (!Number.isFinite(terrainM)) text = '采样点地形高度缺测，无法确认该天气层在地表以上';
 		else if (!Number.isFinite(values.cloudPct) || !Number.isFinite(values.humidityPct)) text = explainProfileQuery(frame, heightM, weatherGround);
-		return { index, name: sample.name, distanceM: sample.distanceM, heightM, values, kind, text,
-			x: geometry.x(sample.distanceM), y: geometry.y(heightM), visible: heightM >= 0 && heightM <= geometry.maxHeightM };
+		const cloudKnown = Number.isFinite(values.cloudPct), humidityKnown = Number.isFinite(values.humidityPct);
+		const cloudIntensity = values.cloudPct > 75 ? '>75–100%' : values.cloudPct > 50 ? '>50–75%' : values.cloudPct > 25 ? '>25–50%' : values.cloudPct > 0 ? '>0–25%' : values.cloudPct === 0 ? '0%' : '缺测';
+		if (position.relation === 'unknown' && kind === 'unknown' && cloudKnown && humidityKnown) text = position.reason;
+		return { index, name: sample.name, distanceM: sample.distanceM, heightM, values, kind, text, cloudKnown, humidityKnown, cloudIntensity,position,
+			derivedCloud:sample.profile?.dataSource === 'open-meteo' && sample.profile?.servedModel !== 'gfs',
+			x: summaryOnly ? null : geometry.x(sample.distanceM), y: summaryOnly ? null : geometry.y(heightM), visible: heightM >= 0 && heightM <= geometry.maxHeightM };
 	});
 	// Clip by breaking segments outside the chart, rather than clamping to an axis.
 	let pen = false, path = '';
-	for (let index = 0; index <= 160; index++) {
+	for (let index = 0; !summaryOnly && index <= 160; index++) {
 		const fraction = index / 160, height = at(fraction);
 		if (height < 0 || height > geometry.maxHeightM) { pen = false; continue; }
 		path += `${pen ? 'L' : 'M'}${geometry.x(distanceM * fraction).toFixed(2)},${geometry.y(height).toFixed(2)} `; pen = true;
@@ -67,11 +73,18 @@ export function buildCloudSightline(points, samples, timestampMs, startText, tar
 		Number.isFinite(ground(samples[0])) && Math.abs(startGround - ground(samples[0])) > 300 ? `机位「${points[0].name}」校正海拔 ${Math.round(startGround)} 米，与原采样地形 ${Math.round(ground(samples[0]))} 米相差较大，请核对路线顺序与坐标。` : '',
 		Number.isFinite(ground(samples.at(-1))) && Math.abs(targetM - ground(samples.at(-1))) > 300 ? `目标「${points[1].name}」校正海拔 ${Math.round(targetM)} 米，与原采样地形 ${Math.round(ground(samples.at(-1)))} 米相差较大，请核对坐标。` : ''
 	].filter(Boolean);
-	return { ok: true, reason: '', distanceM, observerM, targetM, path, marks, correctionWarnings,
+	const intervals = marks.slice(1).map((right,index) => ({index,startM:marks[index].distanceM,endM:right.distanceM,
+		complete:marks[index].cloudKnown && marks[index].humidityKnown && right.cloudKnown && right.humidityKnown,
+		positionKnown:marks[index].position.relation !== 'unknown' && right.position.relation !== 'unknown'}));
+	return { ok: true, reason: '', distanceM, observerM, targetM, path, marks, correctionWarnings, intervals,
+		cloudValidCount:marks.filter(mark=>mark.cloudKnown).length,humidityValidCount:marks.filter(mark=>mark.humidityKnown).length,
+		incompleteCount:marks.filter(mark=>!mark.cloudKnown || !mark.humidityKnown).length,
+		zeroCloudCount:marks.filter(mark=>mark.values.cloudPct === 0).length,
+		positionCounts:Object.fromEntries(['intersect','possible','above','below','between','none-detected','unknown'].map(relation=>[relation,marks.filter(mark=>mark.position.relation === relation).length])),
 		observerName: points[0].name, targetName: points[1].name,
 		clearCount: marks.filter(mark => mark.kind === 'clear').length,
 		cloudCount: marks.filter(mark => mark.kind === 'cloud').length,
 		humidCount: marks.filter(mark => mark.kind === 'humid').length,
 		unknownCount: marks.filter(mark => mark.kind === 'unknown').length,
-		outsideChart: marks.some(mark => !mark.visible) || Array.from({length: 161}, (_, i) => at(i / 160)).some(h => h < 0 || h > geometry.maxHeightM) };
+		outsideChart: marks.some(mark => !mark.visible) || (!summaryOnly && Array.from({length: 161}, (_, i) => at(i / 160)).some(h => h < 0 || h > geometry.maxHeightM)) };
 }
